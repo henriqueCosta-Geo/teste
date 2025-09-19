@@ -38,7 +38,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/ - COMENTADO: não excluir frontend/src/lib que contém api.ts
 lib64/
 parts/
 sdist/
