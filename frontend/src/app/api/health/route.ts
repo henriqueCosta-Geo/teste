@@ -30,7 +30,6 @@ export async function GET() {
         backend_data: data,
         config: {
           environment: process.env.NODE_ENV,
-          isDocker,
           apiBaseUrl: API_BASE_URL,
           hostname: process.env.HOSTNAME
         }
@@ -43,7 +42,6 @@ export async function GET() {
         error: `HTTP ${response.status} ${response.statusText}`,
         config: {
           environment: process.env.NODE_ENV,
-          isDocker,
           apiBaseUrl: API_BASE_URL,
           hostname: process.env.HOSTNAME
         }
@@ -61,7 +59,6 @@ export async function GET() {
       errorCode: error.code,
       config: {
         environment: process.env.NODE_ENV,
-        isDocker,
         apiBaseUrl: API_BASE_URL,
         hostname: process.env.HOSTNAME
       }
