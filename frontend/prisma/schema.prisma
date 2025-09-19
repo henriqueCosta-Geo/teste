@@ -18,7 +18,7 @@ model customers {
   slug          String    @unique // para URLs amigáveis
   metadata_file String?   // caminho para arquivo de metadados TOML
   is_active     Boolean   @default(true)
-  created_at    DateTime  @default(now())
+  created_at    DateTime?  @default(now())
   updated_at    DateTime  @updatedAt
   deleted_at    DateTime?
 
@@ -40,7 +40,7 @@ model Users {
   customer_id   Int
   is_active     Boolean   @default(true)
   last_login    DateTime?
-  created_at    DateTime  @default(now())
+  created_at    DateTime? @default(now())
   updated_at    DateTime  @updatedAt
   deleted_at    DateTime?
 
@@ -100,7 +100,7 @@ model Files {
   file_size     Int
   processed     Boolean  @default(false)
   collection_id Int
-  created_at    DateTime @default(now())
+  created_at    DateTime? @default(now())
 
   // Relacionamentos
   collection Collections @relation(fields: [collection_id], references: [id], onDelete: Cascade)
@@ -191,7 +191,7 @@ model AgentCollections {
   collection_id Int
   access_level  String  @default("read")
   priority      Int     @default(0)
-  created_at    DateTime @default(now())
+  created_at    DateTime? @default(now())
 
   // Relacionamentos
   agent      Agents      @relation(fields: [agent_id], references: [id], onDelete: Cascade)
@@ -213,7 +213,7 @@ model ChatSessions {
   team_id       Int?
   customer_id   Int       // NOVO: associar à customer
   last_activity DateTime  @default(now())
-  created_at    DateTime  @default(now())
+  created_at    DateTime?  @default(now())
 
   // Relacionamentos
   customer customers     @relation(fields: [customer_id], references: [id])
