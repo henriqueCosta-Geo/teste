@@ -71,14 +71,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Criar o team (relacionamento com customer agora é via TOML)
+    // Criar o team
     const team = await prisma.agentTeams.create({
       data: {
         name: name.trim(),
         description: description.trim(),
         leader_agent_id: leader_agent_id ? parseInt(leader_agent_id) : null,
-        is_active: true,
-        customer_id: session.user.customer_id
+        is_active: true
       }
     })
 
