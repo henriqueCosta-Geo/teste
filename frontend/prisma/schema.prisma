@@ -1,0 +1,398 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// 🏢 SISTEMA MULTI-TENANT (MÍNIMO PARA AUTH)
+// ============================================================================
+
+model customers {
+  id            Int       @id @default(autoincrement())
+  name          String    @unique
+  slug          String    @unique // para URLs amigáveis
+  metadata_file String?   // caminho para arquivo de metadados TOML
+  is_active     Boolean   @default(true)
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  deleted_at    DateTime?
+
+  // Relacionamentos
+  users                Users[]
+  chat_sessions        ChatSessions[]
+  customer_settings    CustomerSettings[]
+}
+
+model Users {
+  id            Int       @id @default(autoincrement())
+  name          String
+  email         String    @unique
+  username      String    @unique
+  password      String?   // argon2 hash - opcional para OAuth
+  emailVerified DateTime? // Para Auth.js
+  image         String?   // Para Auth.js (avatar)
+  role          UserRole  @default(REGULAR)
+  customer_id   Int
+  is_active     Boolean   @default(true)
+  last_login    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  deleted_at    DateTime?
+
+  // Relacionamentos
+  customer      customers       @relation(fields: [customer_id], references: [id])
+  chat_sessions ChatSessions[]
+  user_feedback UserFeedbacks[]
+  accounts      Account[]       // Para Auth.js OAuth
+  sessions      Session[]       // Para Auth.js
+
+  @@map("users")
+}
+
+model CustomerSettings {
+  id              Int    @id @default(autoincrement())
+  customer_id     Int
+  setting_key     String // ex: "ui.logo_path", "chat.has_history"
+  setting_value   String // valor em JSON string
+  setting_type    String // "string", "boolean", "number", "json"
+  
+  customer    customers @relation(fields: [customer_id], references: [id])
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  @@unique([customer_id, setting_key])
+  @@map("customer_settings")
+}
+
+// ============================================================================
+// 📄 SISTEMA DE DOCUMENTOS/RAG (ADAPTADO)
+// ============================================================================
+
+model Collections {
+  id              Int      @id @default(autoincrement())
+  name            String
+  description     String?
+  vector_size     Int      @default(384)
+  distance_metric String   @default("Cosine")
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  // Relacionamentos
+  files             Files[]
+  chunks            Chunks[]
+  agent_collections AgentCollections[]
+
+  @@map("collections")
+}
+
+model Files {
+  id            Int      @id @default(autoincrement())
+  filename      String
+  original_name String
+  file_path     String
+  file_type     String
+  file_size     Int
+  processed     Boolean  @default(false)
+  collection_id Int
+  created_at    DateTime @default(now())
+
+  // Relacionamentos
+  collection Collections @relation(fields: [collection_id], references: [id], onDelete: Cascade)
+  chunks     Chunks[]
+
+  @@map("files")
+}
+
+model Chunks {
+  id                Int      @id @default(autoincrement())
+  file_id           Int
+  collection_id     Int
+  content           String   @db.Text
+  chunk_index       Int
+  qdrant_point_id   String?
+  embedding_model   String   @default("all-MiniLM-L6-v2")
+  created_at        DateTime @default(now())
+
+  // Relacionamentos
+  file       Files       @relation(fields: [file_id], references: [id], onDelete: Cascade)
+  collection Collections @relation(fields: [collection_id], references: [id], onDelete: Cascade)
+
+  @@map("chunks")
+}
+
+// ============================================================================
+// 🤖 SISTEMA DE AGENTES (ADAPTADO)
+// ============================================================================
+
+model Agents {
+  id           Int       @id @default(autoincrement())
+  name         String
+  description  String?   @db.Text
+  role         String?   @db.Text
+  model        String    @default("gpt-4o-mini")
+  temperature  Float     @default(0.7)
+  instructions String?   @db.Text
+  tools_config Json      @default("[]")
+  is_active    Boolean   @default(true)
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  // Relacionamentos
+  collections         AgentCollections[]
+  executions          AgentExecutions[]
+  team_memberships    TeamMembers[]
+  led_teams           AgentTeams[]        @relation("TeamLeader")
+  chat_sessions       ChatSessions[]
+  performance_metrics PerformanceMetrics[]
+  token_usage         TokenUsages[]
+
+  @@map("agents")
+}
+
+
+model AgentTeams {
+  id               Int      @id @default(autoincrement())
+  name             String
+  description      String?  @db.Text
+  leader_agent_id  Int?
+  is_active        Boolean  @default(true)
+  created_at       DateTime @default(now())
+
+  // Relacionamentos
+  leader      Agents?       @relation("TeamLeader", fields: [leader_agent_id], references: [id])
+  members     TeamMembers[]
+  chat_sessions ChatSessions[]
+
+  @@map("agent_teams")
+}
+
+model TeamMembers {
+  team_id      Int
+  agent_id     Int
+  role_in_team String? @default("member")
+  joined_at    DateTime @default(now())
+
+  // Relacionamentos
+  team  AgentTeams @relation(fields: [team_id], references: [id], onDelete: Cascade)
+  agent Agents     @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+
+  @@id([team_id, agent_id])
+  @@map("team_members")
+}
+
+model AgentCollections {
+  agent_id      Int
+  collection_id Int
+  access_level  String  @default("read")
+  priority      Int     @default(0)
+  created_at    DateTime @default(now())
+
+  // Relacionamentos
+  agent      Agents      @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  collection Collections @relation(fields: [collection_id], references: [id], onDelete: Cascade)
+
+  @@id([agent_id, collection_id])
+  @@map("agent_collections")
+}
+
+// ============================================================================
+// 💬 SISTEMA DE CHAT/SESSÕES (ADAPTADO)
+// ============================================================================
+
+model ChatSessions {
+  id            Int       @id @default(autoincrement())
+  session_id    String    @unique
+  user_id       Int?      // NOVO: associar ao usuário
+  agent_id      Int?
+  team_id       Int?
+  customer_id   Int       // NOVO: associar à customer
+  last_activity DateTime  @default(now())
+  created_at    DateTime  @default(now())
+
+  // Relacionamentos
+  customer customers     @relation(fields: [customer_id], references: [id])
+  user     Users?        @relation(fields: [user_id], references: [id])
+  agent    Agents?       @relation(fields: [agent_id], references: [id])
+  team     AgentTeams?   @relation(fields: [team_id], references: [id])
+  messages ChatMessages[]
+
+  @@map("chat_sessions")
+}
+
+model ChatMessages {
+  id               Int      @id @default(autoincrement())
+  session_id       Int
+  message_type     String   // 'user', 'agent', 'team', 'error'
+  content          String   @db.Text
+  message_metadata Json     @default("{}")
+  created_at       DateTime @default(now())
+
+  // Relacionamentos
+  session ChatSessions @relation(fields: [session_id], references: [id], onDelete: Cascade)
+
+  @@map("chat_messages")
+}
+
+model AgentExecutions {
+  id                   Int      @id @default(autoincrement())
+  agent_id             Int
+  input_text           String?  @db.Text
+  output_text          String?  @db.Text
+  tools_used           Json     @default("[]")
+  collections_searched Json     @default("[]")
+  execution_time_ms    Int?
+  tokens_used          Int?
+  created_at           DateTime @default(now())
+
+  // Relacionamentos
+  agent Agents @relation(fields: [agent_id], references: [id])
+
+  @@map("agent_executions")
+}
+
+// ============================================================================
+// 📊 SISTEMA DE ANALYTICS/MÉTRICAS (ADAPTADO)
+// ============================================================================
+
+model PerformanceMetrics {
+  id                   Int      @id @default(autoincrement())
+  agent_id             Int
+  metric_date          DateTime
+  total_interactions   Int      @default(0)
+  avg_response_time_ms Float    @default(0)
+  tokens_consumed      Int      @default(0)
+  success_rate         Float    @default(100)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  // Relacionamentos
+  agent Agents @relation(fields: [agent_id], references: [id])
+
+  @@unique([agent_id, metric_date])
+  @@map("performance_metrics")
+}
+
+model TokenUsages {
+  id             Int      @id @default(autoincrement())
+  agent_id       Int?
+  session_id     String?
+  model_used     String
+  input_tokens   Int      @default(0)
+  output_tokens  Int      @default(0)
+  cost_estimate  Float    @default(0)
+  operation_type String   @default("chat")
+  created_at     DateTime @default(now())
+
+  // Relacionamentos
+  agent Agents? @relation(fields: [agent_id], references: [id])
+
+  @@map("token_usages")
+}
+
+model UserMetrics {
+  id                       Int      @id @default(autoincrement())
+  user_id                  String
+  session_id               String
+  agent_id                 Int?
+  team_id                  Int?
+  total_messages           Int      @default(0)
+  session_duration_seconds Int      @default(0)
+  created_at               DateTime @default(now())
+  updated_at               DateTime @updatedAt
+
+  @@unique([user_id, session_id])
+  @@map("user_metrics")
+}
+
+model ContentTopics {
+  id               Int      @id @default(autoincrement())
+  session_id       String
+  agent_id         Int?
+  extracted_topics Json     @default("[]")
+  message_content  String?  @db.Text
+  topic_keywords   Json     @default("[]")
+  confidence_score Float    @default(0)
+  created_at       DateTime @default(now())
+
+  @@map("content_topics")
+}
+
+model UserFeedbacks {
+  id               Int       @id @default(autoincrement())
+  session_id       String
+  user_id          Int?      // NOVO: referência ao usuário
+  agent_id         Int?
+  team_id          Int?
+  rating           Int?
+  issue_category   String?
+  feedback_comment String?   @db.Text
+  sentiment        String?
+  auto_generated   Boolean   @default(false)
+  created_at       DateTime  @default(now())
+
+  // Relacionamentos
+  user Users? @relation(fields: [user_id], references: [id])
+
+  @@map("user_feedbacks")
+}
+
+// ============================================================================
+// 🔐 AUTENTICAÇÃO (AUTH.JS)
+// ============================================================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            Int
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  
+  user Users @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       Int
+  expires      DateTime
+  
+  user Users @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================================
+// 🔐 ENUMS
+// ============================================================================
+
+enum UserRole {
+  REGULAR    // Cliente regular - só chat
+  ADMIN      // Cliente admin - dashboard + chat
+  SUPER_USER // Desenvolvedor - acesso total
+}
+

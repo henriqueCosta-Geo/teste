@@ -1,0 +1,37 @@
+# Configurações do Super Admin
+[ui]
+theme = "dark"
+logo_path = "/logos/admin-logo.svg"
+primary_color = "#DC2626"
+show_branding = true
+
+# Configurações de Chat (admin tem acesso total)
+[chat]
+has_history = true
+max_messages = 1000
+default_agent = ""
+default_team = ""
+welcome_message = "Bem-vindo ao painel administrativo do sistema!"
+
+# Todos os recursos habilitados para admin
+[features]
+agents = true
+collections = true
+teams = true
+analytics = true
+admin_panel = true
+user_management = true
+system_settings = true
+
+# Limites altos para admin
+[limits]
+max_users = 1000
+max_agents = 100
+max_collections = 500
+storage_mb = 102400
+
+# Integrações permitidas (todas)
+[integrations]
+allowed_oauth = ["google", "microsoft", "github", "okta", "auth0"]
+webhook_url = ""
+api_access = true

@@ -1,0 +1,32 @@
+# Configurações de UI/Interface
+[ui]
+theme = "light"
+logo_path = "/logos/demo-logo.png"
+primary_color = "#3B82F6"
+show_branding = true
+
+# Configurações de Chat
+[chat]
+has_history = true
+max_messages = 100
+default_agent = "assistant"
+welcome_message = "Olá! Como posso ajudar você hoje?"
+
+# Recursos habilitados
+[features]
+agents = true
+collections = true
+teams = true
+analytics = true
+
+# Limites padrão
+[limits]
+max_users = 50
+max_agents = 20
+max_collections = 100
+storage_mb = 10240
+
+# Integrações permitidas
+[integrations]
+allowed_oauth = ["google", "microsoft", "github"]
+webhook_url = ""

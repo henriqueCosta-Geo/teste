@@ -1,0 +1,35 @@
+# Dockerfile para backend Python/FastAPI no Railway
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    make \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --upgrade pip setuptools wheel
+
+# Copy requirements and install dependencies
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend code
+COPY backend/ .
+
+# Copy configuration files
+COPY config/ ./config/
+COPY metadata/ ./metadata/
+
+# Create uploads directory
+RUN mkdir -p ./uploads
+
+# Expose port (Railway uses PORT env var)
+EXPOSE 8000
+
+# Start command
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

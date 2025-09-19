@@ -1,0 +1,27 @@
+# Configuração de exemplo para customer DEMO
+[ui]
+logo_path = "/images/logo.png"
+brand_name = "Demo Company"
+primary_color = "#0066cc"
+secondary_color = "#f0f0f0"
+theme = "light"
+
+[chat]
+has_history = true
+max_messages = 100
+default_agent = 1
+default_team = 1
+welcome_message = "Olá! Como posso ajudá-lo hoje?"
+
+[features]
+chat_enabled = true
+documents_enabled = true
+analytics_enabled = false
+multi_agent = true
+team_chat = true
+
+[limits]
+max_file_size_mb = 10
+max_files_per_upload = 5
+max_chat_sessions = 50
+daily_message_limit = 1000
