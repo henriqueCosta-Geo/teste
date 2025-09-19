@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Database, FileText, Upload, Trash2, Download, Search, Settings, AlertCircle, CheckCircle } from 'lucide-react'
-import { collectionsAPI, filesAPI } from '@/lib/api'
+import { collectionsAPI, filesAPI } from '../lib/api'
 import type { Collection } from '@/lib/types'
 
 export default function CollectionDetailPage() {

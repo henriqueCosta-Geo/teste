@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Plus, Users, Crown, UserPlus, Trash2, Eye } from 'lucide-react'
-import { teamsAPI } from '@/lib/api'
+import { teamsAPI } from '../lib/api'
 import { PageLayout, PageLayoutSkeleton, EmptyState } from '@/components/layout/page-layout'
 import { TeamCard } from '@/components/ui/cards'
 import RoleGuard from '@/components/auth/RoleGuard'

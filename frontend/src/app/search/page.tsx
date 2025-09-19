@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Plus, Trash2, MessageSquare, Settings, Bot, Brain } from 'lucide-react'
-import { agentsAPI } from '@/lib/api'
+import { agentsAPI } from '../lib/api'
 import type { Agent } from '@/lib/types'
 
 export default function AgentsPage() {

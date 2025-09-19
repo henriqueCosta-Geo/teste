@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Database, Bot, FileText, Search, Plus, ArrowRight, Activity, Users, MessageCircle } from 'lucide-react'
-import { collectionsAPI, agentsAPI } from '@/lib/api'
+import { collectionsAPI, agentsAPI } from '../lib/api'
 import { useUserMetadata } from '@/hooks/useUserMetadata'
 import type { Collection, Agent } from '@/lib/types'
 

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Users, AlertCircle, Bot, Crown, Plus, X } from 'lucide-react'
-import { agentsAPI, teamsAPI } from '@/lib/api'
+import { agentsAPI, teamsAPI } from '../lib/api'
 import type { Agent } from '@/lib/types'
 
 export default function CreateTeamPage() {

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { MessageCircle, Users, Bot, Search, Calendar, TrendingUp, Clock } from 'lucide-react'
 import { useUserMetadata } from '@/hooks/useUserMetadata'
-import { teamsAPI } from '@/lib/api'
+import { teamsAPI } from '../lib/api'
 
 export default function AdminHome() {
   const { metadata, loading: metadataLoading } = useUserMetadata()

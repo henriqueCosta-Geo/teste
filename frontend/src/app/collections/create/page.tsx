@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Database, Upload, AlertCircle } from 'lucide-react'
-import { collectionsAPI } from '@/lib/api'
+import { collectionsAPI } from '../lib/api'
 
 export default function CreateCollectionPage() {
   const router = useRouter()
