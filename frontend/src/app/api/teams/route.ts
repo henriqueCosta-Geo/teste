@@ -77,7 +77,8 @@ export async function POST(request: NextRequest) {
         name: name.trim(),
         description: description.trim(),
         leader_agent_id: leader_agent_id ? parseInt(leader_agent_id) : null,
-        is_active: true
+        is_active: true,
+        customer_id: session.user.customer_id
       }
     })
 

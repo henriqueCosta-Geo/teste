@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Bot, AlertCircle, Settings, Save, Database, Plus, Trash2 } from 'lucide-react'
-import { agentsAPI, collectionsAPI } from '../../../lib/api'
-import type { Agent, Collection } from '../../../lib/types'
+import { agentsAPI, collectionsAPI } from '@/lib/api'
+import type { Agent, Collection } from '@/lib/types'
 
 export default function AgentConfigPage() {
   const router = useRouter()

@@ -52,6 +52,8 @@ RUN npm run build
 # Copy the standalone output
 RUN mkdir -p ./standalone && \
     cp -r .next/standalone/* ./standalone/ && \
+    mkdir -p ./standalone/.next && \
+    cp -r .next/static ./standalone/.next/ && \
     mkdir -p ./standalone/public/logos
 
 WORKDIR /app/standalone
