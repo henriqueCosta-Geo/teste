@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server'
 
-// Detecta se está rodando em Docker ou local
-const isDocker = process.env.NODE_ENV === 'production' && process.env.HOSTNAME
-const API_BASE_URL = isDocker 
-  ? 'http://backend:8000' 
-  : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
+// Detecta se está rodando em Docker local ou Railway
+const isLocalDocker = process.env.NODE_ENV === 'production' && process.env.HOSTNAME && !process.env.RAILWAY_ENVIRONMENT
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ||
+  (isLocalDocker ? 'http://backend:8000' : 'http://localhost:8000')
 
 export async function GET() {
   try {
