@@ -4,11 +4,11 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Building2, AlertCircle, FileText, User, TestTube, Eye } from 'lucide-react'
-import { customersAPI } from '@/lib/api'
-import { AdvancedMetadataEditor } from '@/components/customers/AdvancedMetadataEditor'
-import { MetadataPreview } from '@/components/customers/MetadataPreview'
-import { SimulationModal } from '@/components/customers/SimulationModal'
-import LogoUpload from '@/components/customers/LogoUpload'
+import { customersAPI } from '../../../../lib/api'
+import { AdvancedMetadataEditor } from '../../../../components/customers/AdvancedMetadataEditor'
+import { MetadataPreview } from '../../../../components/customers/MetadataPreview'
+import { SimulationModal } from '../../../../components/customers/SimulationModal'
+import LogoUpload from '../../../../components/customers/LogoUpload'
 
 export default function CreateCustomerPage() {
   const router = useRouter()

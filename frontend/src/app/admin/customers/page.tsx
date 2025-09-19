@@ -3,11 +3,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Plus, Trash2, Building2, Users, Eye, Settings, TestTube } from 'lucide-react'
-import { customersAPI } from '@/lib/api'
-import type { Customer } from '@/lib/types'
-import { GridSkeleton, HeaderSkeleton } from '@/components/ui/skeleton'
-import { PageLayout, PageLayoutSkeleton, EmptyState } from '@/components/layout/page-layout'
-import { CustomerCard } from '@/components/ui/cards'
+import { customersAPI } from '../../../lib/api'
+import type { Customer } from '../../../lib/types'
+import { GridSkeleton, HeaderSkeleton } from '../../../components/ui/skeleton'
+import { PageLayout, PageLayoutSkeleton, EmptyState } from '../../../components/layout/page-layout'
+import { CustomerCard } from '../../../components/ui/cards'
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])

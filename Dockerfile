@@ -26,12 +26,6 @@ ENV NODE_ENV=production
 # Generate Prisma client
 RUN npx prisma generate
 
-# Debug: Check if api.ts exists
-RUN echo "=== Checking if api.ts exists ===" && \
-    ls -la ./src/lib/api.ts && \
-    echo "=== First few lines of api.ts ===" && \
-    head -10 ./src/lib/api.ts
-
 # Build application
 RUN npm run build
 

@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Send, Bot, User, ArrowLeft, Loader } from 'lucide-react'
-import { agentsAPI } from '@/lib/api'
-import MarkdownRenderer from '@/components/MarkdownRenderer'
+import { agentsAPI } from '../../../lib/api'
+import MarkdownRenderer from '../../../components/MarkdownRenderer'
 
 interface Message {
   id: string
