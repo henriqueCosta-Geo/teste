@@ -72,10 +72,10 @@ export class MetadataOrchestrator {
         customer_plan: 'CUSTOM' // Metadata-driven plan
       },
       permissions: {
-        can_manage_agents: user.role !== "USER" || metadata.features?.agents !== false,
-        can_manage_collections: user.role !== "USER" || metadata.features?.collections !== false,
-        can_manage_teams: user.role !== "USER" || metadata.features?.teams !== false,
-        can_view_analytics: user.role !== "USER" || metadata.features?.analytics !== false,
+        can_manage_agents: user.role !== "REGULAR" || metadata.features?.agents !== false,
+        can_manage_collections: user.role !== "REGULAR" || metadata.features?.collections !== false,
+        can_manage_teams: user.role !== "REGULAR" || metadata.features?.teams !== false,
+        can_view_analytics: user.role !== "REGULAR" || metadata.features?.analytics !== false,
         can_manage_users: ["ADMIN", "SUPER_USER"].includes(user.role),
         can_manage_settings: ["ADMIN", "SUPER_USER"].includes(user.role)
       },
