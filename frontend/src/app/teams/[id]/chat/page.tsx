@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Send, Users, User, ArrowLeft, Loader, Crown } from 'lucide-react'
-import { teamsAPI } from '../lib/api'
+import { teamsAPI } from '@/lib/api'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
 
 interface Message {

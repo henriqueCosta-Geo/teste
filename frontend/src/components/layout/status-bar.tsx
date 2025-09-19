@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
-import { systemAPI } from '../lib/api'
+import { systemAPI } from '@/lib/api'
 import type { SystemStatus } from '@/lib/types'
 
 export default function StatusBar() {

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Users, Crown, MessageSquare, Settings, Calendar, User, Trash2, AlertCircle } from 'lucide-react'
-import { teamsAPI } from '../lib/api'
+import { teamsAPI } from '@/lib/api'
 
 interface TeamMember {
   agent_id: number
