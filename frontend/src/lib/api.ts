@@ -47,7 +47,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}) {
 
 export const systemAPI = {
   getStatus: async (): Promise<SystemStatus> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/status`)
+    const response = await fetchWithTimeout(`/api/proxy/status`)
     return await handleResponse(response)
   }
 }
@@ -58,17 +58,17 @@ export const systemAPI = {
 
 export const collectionsAPI = {
   list: async (): Promise<Collection[]> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/collections`)
+    const response = await fetchWithTimeout(`/api/proxy/collections`)
     return await handleResponse(response)
   },
 
   get: async (id: number): Promise<Collection> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/collections/${id}`)
+    const response = await fetchWithTimeout(`/api/proxy/collections/${id}`)
     return await handleResponse(response)
   },
 
   create: async (collection: Omit<Collection, 'id' | 'files_count' | 'chunks_count' | 'created_at'>): Promise<Collection> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/collections`, {
+    const response = await fetchWithTimeout(`/api/proxy/collections`, {
       method: 'POST',
       body: JSON.stringify(collection),
     })
@@ -76,7 +76,7 @@ export const collectionsAPI = {
   },
 
   delete: async (id: number): Promise<void> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/collections/${id}`, {
+    const response = await fetchWithTimeout(`/api/proxy/collections/${id}`, {
       method: 'DELETE',
     })
     await handleResponse(response)
@@ -86,7 +86,7 @@ export const collectionsAPI = {
     const formData = new FormData()
     formData.append('file', file)
     
-    const response = await fetchWithTimeout(`${API_BASE_URL}/collections/${collectionId}/upload`, {
+    const response = await fetchWithTimeout(`/api/proxy/collections/${collectionId}/upload`, {
       method: 'POST',
       headers: {}, // Let fetch set Content-Type for FormData
       body: formData,
@@ -103,7 +103,7 @@ export const collectionsAPI = {
     formData.append('query', query)
     formData.append('limit', limit.toString())
     
-    const response = await fetchWithTimeout(`${API_BASE_URL}/collections/${collectionId}/search`, {
+    const response = await fetchWithTimeout(`/api/proxy/collections/${collectionId}/search`, {
       method: 'POST',
       headers: {}, // Let fetch set Content-Type for FormData
       body: formData,
@@ -112,7 +112,7 @@ export const collectionsAPI = {
   },
 
   getFiles: async (collectionId: number): Promise<FileRecord[]> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/collections/${collectionId}/files`)
+    const response = await fetchWithTimeout(`/api/proxy/collections/${collectionId}/files`)
     return await handleResponse(response)
   }
 }
