@@ -70,7 +70,7 @@ export async function GET(
       users: users.map(user => ({
         ...user,
         created_at: user.created_at?.toISOString() || null,
-        updated_at: user.updated_at.toISOString(),
+        updated_at: user.updated_at?.toISOString() || null,
         last_login: user.last_login?.toISOString() || null
       }))
     })

@@ -19,7 +19,7 @@ model customers {
   metadata_file String?   // caminho para arquivo de metadados TOML
   is_active     Boolean   @default(true)
   created_at    DateTime?  @default(now())
-  updated_at    DateTime  @updatedAt
+  updated_at    DateTime? @updatedAt
   deleted_at    DateTime?
 
   // Relacionamentos
@@ -41,7 +41,7 @@ model Users {
   is_active     Boolean   @default(true)
   last_login    DateTime?
   created_at    DateTime? @default(now())
-  updated_at    DateTime  @updatedAt
+  updated_at    DateTime? @updatedAt
   deleted_at    DateTime?
 
   // Relacionamentos
@@ -81,7 +81,7 @@ model Collections {
   distance_metric String   @default("Cosine")
   is_active       Boolean  @default(true)
   created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  updated_at      DateTime? @updatedAt
 
   // Relacionamentos
   files             Files[]
@@ -141,7 +141,7 @@ model Agents {
   tools_config Json      @default("[]")
   is_active    Boolean   @default(true)
   created_at   DateTime  @default(now())
-  updated_at   DateTime  @updatedAt
+  updated_at   DateTime? @updatedAt
 
   // Relacionamentos
   collections         AgentCollections[]
@@ -269,7 +269,7 @@ model PerformanceMetrics {
   tokens_consumed      Int      @default(0)
   success_rate         Float    @default(100)
   created_at           DateTime @default(now())
-  updated_at           DateTime @updatedAt
+  updated_at           DateTime? @updatedAt
 
   // Relacionamentos
   agent Agents @relation(fields: [agent_id], references: [id])
@@ -304,7 +304,7 @@ model UserMetrics {
   total_messages           Int      @default(0)
   session_duration_seconds Int      @default(0)
   created_at               DateTime @default(now())
-  updated_at               DateTime @updatedAt
+  updated_at               DateTime? @updatedAt
 
   @@unique([user_id, session_id])
   @@map("user_metrics")

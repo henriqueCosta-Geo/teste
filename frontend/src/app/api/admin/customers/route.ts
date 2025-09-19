@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       metadata_file: customer.metadata_file,
       users_count: customer._count.users,
       created_at: customer.created_at?.toISOString() || null,
-      updated_at: customer.updated_at.toISOString()
+      updated_at: customer.updated_at?.toISOString() || null
     }))
 
     return NextResponse.json(customersResponse)

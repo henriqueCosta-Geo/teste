@@ -80,7 +80,7 @@ export async function GET(
       is_active: customer.is_active,
       metadata_file: customer.metadata_file,
       created_at: customer.created_at?.toISOString() || null,
-      updated_at: customer.updated_at.toISOString(),
+      updated_at: customer.updated_at?.toISOString() || null,
       users: customer.users,
       metrics: {
         total_users: customer._count.users,
