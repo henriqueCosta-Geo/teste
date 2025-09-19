@@ -1,36 +1,27 @@
 /** @type {import('next').NextConfig} */
+const path = require('path')
+
 const nextConfig = {
-  env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
-  },
-  // Ensure API routes work properly
-  async rewrites() {
-    return []
-  },
-  // Configure Prisma and database
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      // Server-side webpack config for Prisma
-      config.externals.push('@prisma/client')
-    } else {
-      // Client-side webpack config
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-        crypto: false,
-        url: false,
-      }
-    }
-    return config
-  },
-  // Enable experimental features for better API route handling
+  // Configuração mínima para Railway
   experimental: {
     serverComponentsExternalPackages: ['@prisma/client'],
   },
-  // Remove problematic build config
-  skipTrailingSlashRedirect: true,
+
+  // Webpack simples e direto
+  webpack: (config) => {
+    // Resolver paths @/ explicitamente
+    config.resolve.alias['@'] = path.resolve(__dirname, 'src')
+
+    // Fallbacks necessários
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      net: false,
+      tls: false,
+    }
+
+    return config
+  },
 }
 
 module.exports = nextConfig

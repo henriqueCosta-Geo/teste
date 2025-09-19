@@ -212,7 +212,13 @@ railway status
 ### **Frontend não carrega:**
 1. Verifique se `NEXT_PUBLIC_API_URL` está correto
 2. Aguarde o build completar (~5-10 minutos)
-3. Verifique logs: `railway logs --service frontend`
+3. **Se der erro de webpack:** O build foi otimizado para resolver problemas do Railway
+4. Verifique logs: `railway logs --service frontend`
+
+### **Erro de build do Next.js:**
+1. **Telemetry desabilitado:** Para builds mais rápidos
+2. **Webpack worker habilitado:** Para resolver avisos do Railway
+3. **Output standalone:** Para melhor performance no Railway
 
 ### **CORS errors:**
 1. Atualize `CORS_ORIGINS` no backend
