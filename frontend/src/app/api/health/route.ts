@@ -8,7 +8,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ||
 export async function GET() {
   try {
     console.log(`Health check - Environment: ${process.env.NODE_ENV}`)
-    console.log(`Health check - isDocker: ${isDocker}`)
+    console.log(`Health check - isLocalDocker: ${isLocalDocker}`)
     console.log(`Health check - API_BASE_URL: ${API_BASE_URL}`)
     console.log(`Health check - Hostname: ${process.env.HOSTNAME}`)
     
