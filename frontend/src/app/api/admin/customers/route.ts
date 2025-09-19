@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       is_active: customer.is_active,
       metadata_file: customer.metadata_file,
       users_count: customer._count.users,
-      created_at: customer.created_at.toISOString(),
+      created_at: customer.created_at?.toISOString() || null,
       updated_at: customer.updated_at.toISOString()
     }))
 

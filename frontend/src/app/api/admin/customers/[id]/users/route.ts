@@ -69,7 +69,7 @@ export async function GET(
       },
       users: users.map(user => ({
         ...user,
-        created_at: user.created_at.toISOString(),
+        created_at: user.created_at?.toISOString() || null,
         updated_at: user.updated_at.toISOString(),
         last_login: user.last_login?.toISOString() || null
       }))
@@ -204,7 +204,7 @@ export async function POST(
       message: 'Usuário criado com sucesso',
       user: {
         ...newUser,
-        created_at: newUser.created_at.toISOString()
+        created_at: newUser.created_at?.toISOString() || null
       }
     }, { status: 201 })
 
