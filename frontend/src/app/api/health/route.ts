@@ -1,16 +1,11 @@
 import { NextResponse } from 'next/server'
 
-// Detecta se está rodando em Docker local ou Railway
-const isLocalDocker = process.env.NODE_ENV === 'production' && process.env.HOSTNAME && !process.env.RAILWAY_ENVIRONMENT
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ||
-  (isLocalDocker ? 'http://backend:8000' : 'http://localhost:8000')
+// URL do backend - Railway ou local
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export async function GET() {
   try {
-    console.log(`Health check - Environment: ${process.env.NODE_ENV}`)
-    console.log(`Health check - isLocalDocker: ${isLocalDocker}`)
     console.log(`Health check - API_BASE_URL: ${API_BASE_URL}`)
-    console.log(`Health check - Hostname: ${process.env.HOSTNAME}`)
     
     // Tenta conectar no backend
     const controller = new AbortController()
