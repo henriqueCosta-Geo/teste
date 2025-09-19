@@ -19,23 +19,12 @@ COPY frontend/ .
 COPY config/ ./config/
 COPY metadata/ ./metadata/
 
-# Debug: Check if files are copied correctly
-RUN echo "=== Checking file structure ===" && \
-    ls -la ./src/ && \
-    echo "=== Checking lib directory ===" && \
-    ls -la ./src/lib/ && \
-    echo "=== Checking tsconfig ===" && \
-    cat ./tsconfig.json
-
-# Set environment for build
+# Set environment variables
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=development
+ENV NODE_ENV=production
 
-# Generate Prisma client first
+# Generate Prisma client
 RUN npx prisma generate
-
-# Install @types/node if missing
-RUN npm install --save-dev @types/node
 
 # Build application
 RUN npm run build

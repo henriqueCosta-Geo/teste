@@ -2,23 +2,43 @@
 const path = require('path')
 
 const nextConfig = {
-  // Configuração mínima para Railway
+  // Desabilitar telemetria
+  telemetry: {
+    enabled: false
+  },
+
+  // Experimental features mínimas
   experimental: {
     serverComponentsExternalPackages: ['@prisma/client'],
   },
 
-  // Webpack simples e direto
-  webpack: (config) => {
-    // Resolver paths @/ explicitamente
-    config.resolve.alias['@'] = path.resolve(__dirname, 'src')
-
-    // Fallbacks necessários
-    config.resolve.fallback = {
-      ...config.resolve.fallback,
-      fs: false,
-      net: false,
-      tls: false,
+  // Webpack configuration
+  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+    // Configurar alias @ para apontar para src
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': path.join(__dirname, 'src'),
+      '@/lib': path.join(__dirname, 'src/lib'),
+      '@/components': path.join(__dirname, 'src/components'),
+      '@/app': path.join(__dirname, 'src/app'),
+      '@/hooks': path.join(__dirname, 'src/hooks'),
     }
+
+    // Fallbacks para módulos que não existem no browser
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+        crypto: false,
+        path: false,
+        os: false,
+      }
+    }
+
+    // Log para debug (remover depois)
+    console.log('Webpack alias configurado:', config.resolve.alias)
 
     return config
   },
