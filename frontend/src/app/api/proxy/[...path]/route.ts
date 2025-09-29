@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-// URL do backend - Railway ou Docker local ou Dev local
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// URL do backend - prioriza INTERNAL para container-to-container, fallback para dev
+const API_BASE_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 console.log(`API_BASE_URL: ${API_BASE_URL}`)
 
@@ -57,21 +57,21 @@ async function proxyRequest(
       const headers: HeadersInit = {}
       
       // Copy relevant headers
-      const contentType = request.headers.get('content-type')
-      console.log(`Content-Type received: ${contentType}`)
-      
-      if (contentType) {
-        headers['Content-Type'] = contentType
+      const requestContentType = request.headers.get('content-type')
+      console.log(`Content-Type received: ${requestContentType}`)
+
+      if (requestContentType) {
+        headers['Content-Type'] = requestContentType
       }
 
       let body: BodyInit | undefined = undefined
-      
+
       if (method !== 'GET' && method !== 'DELETE') {
         try {
-          if (contentType?.includes('application/json')) {
+          if (requestContentType?.includes('application/json')) {
             body = JSON.stringify(await request.json())
             console.log('Processing as JSON')
-          } else if (contentType?.includes('multipart/form-data') || contentType?.includes('application/x-www-form-urlencoded')) {
+          } else if (requestContentType?.includes('multipart/form-data') || requestContentType?.includes('application/x-www-form-urlencoded')) {
             body = await request.formData()
             console.log('Processing as FormData')
             // Remove Content-Type header to let fetch set it with boundary
@@ -98,16 +98,32 @@ async function proxyRequest(
         method,
         headers,
         body,
-        signal: AbortSignal.timeout(10000), // 10 segundos timeout
+        signal: AbortSignal.timeout(30000), // 30 segundos timeout para streaming
       })
 
-      const responseData = await response.text()
       console.log(`Success: ${response.status} ${response.statusText}`)
-      
+
+      // Verificar se é streaming
+      const responseContentType = response.headers.get('content-type')
+      if (responseContentType?.includes('text/event-stream')) {
+        console.log('🔄 Detectado streaming response, repassando stream')
+        // Retornar stream diretamente
+        return new Response(response.body, {
+          status: response.status,
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        })
+      }
+
+      const responseData = await response.text()
+
       return new NextResponse(responseData, {
         status: response.status,
         headers: {
-          'Content-Type': response.headers.get('content-type') || 'application/json',
+          'Content-Type': responseContentType || 'application/json',
         },
       })
 

@@ -61,8 +61,6 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   // Layout completo para páginas autenticadas
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-secondary)' }}>
-      {/* Status Bar */}
-      <StatusBar />
 
       {/* Header */}
       <header className="shadow-sm border-b" style={{ 
@@ -71,12 +69,13 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            {/* Logo */}
+            {/* Logo GeoCarbonite */}
             <div className="flex items-center">
-              <Database className="h-8 w-8" style={{ color: 'var(--accent-primary)' }} />
-              <h1 className="ml-2 text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                Qdrant Admin
-              </h1>
+              <img
+                src="/images/geocarbonite_logo.png"
+                alt="GeoCarbonite"
+                className="h-8 w-auto mr-3"
+              />
             </div>
 
             {/* Navigation */}
@@ -231,10 +230,10 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center">
             <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-              Qdrant Admin v1.0.0 - Sistema de gestão de vetores e agentes IA
+              GeoCarbonite v1.0.0 - Sistema Inteligente de Suporte Técnico
             </p>
             <div className="flex items-center gap-4 text-sm" style={{ color: 'var(--text-tertiary)' }}>
-              <span>Powered by FastAPI + Next.js</span>
+              <span>© 2024 GeoCarbonite - Todos os direitos reservados</span>
             </div>
           </div>
         </div>

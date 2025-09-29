@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Database, FileText, Upload, Trash2, Download, Search, Settings, AlertCircle, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Database, FileText, Upload, Trash2, Download, Search, Settings, AlertCircle, CheckCircle, TestTube, Send } from 'lucide-react'
 import { collectionsAPI, filesAPI } from '@/lib/api'
 import type { Collection } from '@/lib/types'
 
@@ -16,6 +16,11 @@ export default function CollectionDetailPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [uploadSuccess, setUploadSuccess] = useState('')
+  const [activeTab, setActiveTab] = useState<'files' | 'test'>('files')
+  const [testQuery, setTestQuery] = useState('')
+  const [testResults, setTestResults] = useState<any>(null)
+  const [testing, setTesting] = useState(false)
+  const [testError, setTestError] = useState('')
 
   useEffect(() => {
     loadCollection()
@@ -118,6 +123,27 @@ export default function CollectionDetailPage() {
       } catch (error: any) {
         alert(error.message || 'Erro ao deletar coleção')
       }
+    }
+  }
+
+  const handleTestQuery = async () => {
+    if (!testQuery.trim()) {
+      setTestError('Por favor, digite uma query para testar')
+      return
+    }
+
+    setTesting(true)
+    setTestError('')
+    setTestResults(null)
+
+    try {
+      const collectionId = parseInt(params.id as string)
+      const results = await collectionsAPI.search(collectionId, testQuery.trim(), 5)
+      setTestResults(results)
+    } catch (error: any) {
+      setTestError(error.message || 'Erro ao realizar busca')
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -225,11 +251,40 @@ export default function CollectionDetailPage() {
         </div>
       </div>
 
-      {/* Upload Section */}
+      {/* Tabs */}
       <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Upload de Arquivos</h2>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-lg">
+            <button
+              onClick={() => setActiveTab('files')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'files'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <FileText size={16} className="inline mr-2" />
+              Arquivos
+            </button>
+            <button
+              onClick={() => setActiveTab('test')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'test'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <TestTube size={16} className="inline mr-2" />
+              Testar Base
+            </button>
+          </div>
         </div>
+
+        {activeTab === 'files' && (
+          <>
+            {/* Upload Section */}
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Upload de Arquivos</h2>
 
         {uploadError && (
           <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
@@ -278,8 +333,8 @@ export default function CollectionDetailPage() {
         </div>
       </div>
 
-      {/* Files List */}
-      <div className="card">
+            {/* Files List */}
+            <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Arquivos ({files.length})</h2>
         </div>
@@ -322,6 +377,135 @@ export default function CollectionDetailPage() {
             <FileText size={48} className="mx-auto mb-3 text-gray-300" />
             <p>Nenhum arquivo encontrado</p>
             <p className="text-sm">Faça upload de arquivos para começar</p>
+          </div>
+        )}
+            </div>
+          </>
+        )}
+
+        {activeTab === 'test' && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900">Testar Base de Conhecimento</h2>
+            <p className="text-sm text-gray-600">Faça consultas na sua base de conhecimento para testar a busca semântica.</p>
+
+            {/* Query Input */}
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="test-query" className="block text-sm font-medium text-gray-700 mb-2">
+                  Digite sua pergunta ou consulta
+                </label>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    id="test-query"
+                    value={testQuery}
+                    onChange={(e) => setTestQuery(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && !testing && handleTestQuery()}
+                    placeholder="Ex: Como funciona a autenticação no sistema?"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={testing}
+                  />
+                  <button
+                    onClick={handleTestQuery}
+                    disabled={testing || !testQuery.trim()}
+                    className="btn-primary px-6"
+                  >
+                    {testing ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <>
+                        <Send size={16} />
+                        Buscar
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {testError && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                  <AlertCircle size={16} />
+                  <span>{testError}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Results */}
+            {testResults && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-md font-semibold text-gray-900">
+                    Resultados da busca ({testResults.results?.length || 0})
+                  </h3>
+                  <span className="text-sm text-gray-500">
+                    Query: "{testResults.query}"
+                  </span>
+                </div>
+
+                {testResults.results && testResults.results.length > 0 ? (
+                  <div className="space-y-3">
+                    {testResults.results.map((result: any, index: number) => (
+                      <div key={index} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                              Relevância: {(result.score * 100).toFixed(1)}%
+                            </span>
+                            {result.metadata?.filename && (
+                              <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded">
+                                {result.metadata.filename}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-800 leading-relaxed">
+                          {result.content || result.text}
+                        </p>
+                        {result.metadata && Object.keys(result.metadata).length > 1 && (
+                          <details className="mt-2">
+                            <summary className="text-xs text-gray-500 cursor-pointer">Ver metadados</summary>
+                            <pre className="mt-1 text-xs text-gray-600 bg-gray-100 p-2 rounded overflow-x-auto">
+                              {JSON.stringify(result.metadata, null, 2)}
+                            </pre>
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <Search size={48} className="mx-auto mb-3 text-gray-300" />
+                    <p>Nenhum resultado encontrado</p>
+                    <p className="text-sm">Tente uma consulta diferente ou verifique se há documentos processados</p>
+                  </div>
+                )}
+
+                {/* Quick test queries */}
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <h4 className="text-sm font-medium text-blue-900 mb-2">Consultas rápidas:</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      'Como posso configurar?',
+                      'Qual é o processo para?',
+                      'O que é necessário para?',
+                      'Como funciona a integração?'
+                    ].map((query, index) => (
+                      <button
+                        key={index}
+                        onClick={() => {
+                          setTestQuery(query)
+                          setTestError('')
+                        }}
+                        className="text-xs bg-white text-blue-700 px-3 py-1 rounded border border-blue-200 hover:bg-blue-50"
+                        disabled={testing}
+                      >
+                        {query}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

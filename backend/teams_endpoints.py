@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import json
@@ -249,13 +250,16 @@ class TeamExecuteRequest(BaseModel):
 @teams_router.post("/{team_id}/execute")
 async def execute_team_task(
         team_id: int,
-        request: TeamExecuteRequest,
+        task: str = Form(...),
+        session_id: str = Form(...),
+        stream: bool = Form(False),
         db: Session = Depends(get_db)
 ):
     """Executar tarefa com um time de agentes"""
     logger.info(f"🎯 RECEBIDO EXECUTE PARA TIME {team_id}")
-    logger.info(f"📝 TAREFA: {request.task[:100]}...")
-    logger.info(f"🆔 SESSION: {request.session_id}")
+    logger.info(f"📝 TAREFA: {task[:100]}...")
+    logger.info(f"🆔 SESSION: {session_id}")
+    logger.info(f"🔄 STREAM: {stream}")
 
     # Inicializar serviço de chat
     chat_service = ChatService(db)
@@ -270,19 +274,19 @@ async def execute_team_task(
 
     try:
         # Criar/obter sessão de chat
-        chat_session = chat_service.get_or_create_session(request.session_id, team_id=team_id)
+        chat_session = chat_service.get_or_create_session(session_id, team_id=team_id)
 
         # Adicionar mensagem do usuário ao histórico
         user_metadata = {
             'sender': 'usuário',
-            'session_id': request.session_id,
+            'session_id': session_id,
             'team_id': team_id,
             'timestamp': datetime.now().isoformat()
         }
-        chat_service.add_message(request.session_id, "user", request.task, user_metadata)
+        chat_service.add_message(session_id, "user", task, user_metadata)
 
         # Obter contexto da conversa
-        context_history = chat_service.get_context_for_agent(request.session_id, max_messages=10)
+        context_history = chat_service.get_context_for_agent(session_id, max_messages=10)
 
         logger.info(f"📚 CONTEXTO DA CONVERSA ({len(context_history)} mensagens)")
 
@@ -308,38 +312,93 @@ async def execute_team_task(
         logger.info(f"🚀 EXECUTANDO TAREFA COM TIME {team.name}")
         logger.info(f"👥 MEMBROS: {[m.name for m in members]}")
 
-        # Executar tarefa com o time (incluindo contexto)
-        start_time = time.time()
-        result = agent_manager.execute_team_task_with_context(team_id, request.task, context_history)
-        execution_time_ms = int((time.time() - start_time) * 1000)
+        if stream:
+            # Implementar streaming simples - o agno já tem stream=True por padrão
+            async def generate_stream():
+                try:
+                    start_time = time.time()
 
-        if not result.get('execution_time_ms'):
-            result['execution_time_ms'] = execution_time_ms
+                    # Evento de início
+                    yield f"data: {json.dumps({'type': 'start', 'team_name': team.name, 'members': [m.name for m in members]})}\n\n"
 
-        logger.info(f"✅ EXECUÇÃO CONCLUÍDA - Sucesso: {result.get('success', False)}")
+                    # Executar tarefa e simular streaming baseado na resposta do agno
+                    result = agent_manager.execute_team_task_with_context(team_id, task, context_history)
 
-        # Salvar resposta no histórico
-        if result.get('success'):
-            response_metadata = {
-                'execution_time_ms': result.get('execution_time_ms'),
-                'agents_involved': result.get('agents_involved', []),
-                'team_id': team_id,
-                'sender': f"time-{team.name}",
-                'timestamp': datetime.now().isoformat()
+                    if result.get('success'):
+                        response_content = result.get('team_response', '')
+
+                        # Simular streaming progressivo - construir palavra por palavra
+                        words = response_content.split(' ')
+                        current_text = ''
+
+                        for i, word in enumerate(words):
+                            current_text += word + (' ' if i < len(words) - 1 else '')
+
+                            # Enviar o texto acumulado a cada palavra
+                            yield f"data: {json.dumps({'type': 'content', 'content': current_text, 'agent_name': result.get('agents_involved', ['Time'])[0] if result.get('agents_involved') else 'Time'})}\n\n"
+                            await asyncio.sleep(0.05)  # Pausa pequena para simular escrita
+
+                        # Salvar resposta no histórico
+                        response_metadata = {
+                            'execution_time_ms': int((time.time() - start_time) * 1000),
+                            'agents_involved': result.get('agents_involved', []),
+                            'team_id': team_id,
+                            'sender': f"time-{team.name}",
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        chat_service.add_message(session_id, "team", response_content, response_metadata)
+
+                        # Evento de conclusão
+                        yield f"data: {json.dumps({'type': 'completed', 'execution_time_ms': int((time.time() - start_time) * 1000)})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': 'error', 'message': result.get('error', 'Erro na execução')})}\n\n"
+
+                except Exception as e:
+                    logger.error(f"❌ ERRO NO STREAMING: {e}")
+                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+            return StreamingResponse(
+                generate_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Content-Type": "text/event-stream",
+                }
+            )
+        else:
+            # Executar tarefa com o time (incluindo contexto) - modo síncrono
+            start_time = time.time()
+            result = agent_manager.execute_team_task_with_context(team_id, task, context_history)
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            if not result.get('execution_time_ms'):
+                result['execution_time_ms'] = execution_time_ms
+
+            logger.info(f"✅ EXECUÇÃO CONCLUÍDA - Sucesso: {result.get('success', False)}")
+
+            # Salvar resposta no histórico
+            if result.get('success'):
+                response_metadata = {
+                    'execution_time_ms': result.get('execution_time_ms'),
+                    'agents_involved': result.get('agents_involved', []),
+                    'team_id': team_id,
+                    'sender': f"time-{team.name}",
+                    'timestamp': datetime.now().isoformat()
+                }
+                chat_service.add_message(session_id, "team", result.get('team_response', ''), response_metadata)
+
+            # Adicionar informações do time na resposta
+            result['team_info'] = {
+                'id': team.id,
+                'name': team.name,
+                'members': [
+                    {'id': m.id, 'name': m.name, 'role': m.role}
+                    for m in members
+                ]
             }
-            chat_service.add_message(request.session_id, "team", result.get('team_response', ''), response_metadata)
 
-        # Adicionar informações do time na resposta
-        result['team_info'] = {
-            'id': team.id,
-            'name': team.name,
-            'members': [
-                {'id': m.id, 'name': m.name, 'role': m.role}
-                for m in members
-            ]
-        }
-
-        return result
+            return result
 
     except HTTPException:
         raise

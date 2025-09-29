@@ -47,6 +47,8 @@ export default function TeamChatPage() {
   const [loadingTeam, setLoadingTeam] = useState(true)
   const [teamError, setTeamError] = useState(false)
   const [sessionId] = useState(() => `team-${params.id}-${Date.now()}`)
+  const [streamingMessage, setStreamingMessage] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
 
@@ -136,7 +138,7 @@ export default function TeamChatPage() {
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || loading) return
+    if (!input.trim() || loading || isStreaming) return
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -148,48 +150,75 @@ export default function TeamChatPage() {
     setMessages(prev => [...prev, userMessage])
     setInput('')
     setLoading(true)
+    setIsStreaming(true)
+    setStreamingMessage('')
 
     try {
       console.log('Enviando tarefa para time ID:', params.id, 'Sessão:', sessionId)
       console.log('Tarefa:', userMessage.content.substring(0, 50) + '...')
-      
+
       const teamId = parseInt(params.id as string)
       if (isNaN(teamId)) {
         throw new Error('ID do time inválido')
       }
 
-      // Usar a API lib diretamente para evitar problemas de proxy
-      const data = await teamsAPI.execute(teamId, userMessage.content.trim(), sessionId)
-      console.log('Resposta do time recebida:', data)
-      
-      // Verificar diferentes formatos de resposta para teams
-      let responseContent = ''
-      if (data.team_response) {
-        responseContent = data.team_response
-      } else if (data.response) {
-        responseContent = data.response
-      } else if (data.final_response) {
-        responseContent = data.final_response
-      } else if (typeof data === 'string') {
-        responseContent = data
-      } else {
-        responseContent = 'Desculpe, não consegui processar sua solicitação.'
-        console.warn('Resposta do time em formato inesperado:', data)
-      }
-      
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        content: responseContent,
-        role: 'assistant',
-        timestamp: new Date().toISOString(),
-        agent_name: data.coordinating_agent || data.agent_name || 'Time'
-      }
+      let finalResponse = ''
+      let agentName = 'Time'
 
-      setMessages(prev => [...prev, assistantMessage])
+      // Usar streaming
+      await teamsAPI.executeStream(teamId, userMessage.content.trim(), sessionId, (chunk) => {
+        console.log('Chunk recebido:', chunk)
+
+        if (chunk.type === 'start') {
+          console.log('🚀 Streaming iniciado para time:', chunk.team_name)
+        } else if (chunk.type === 'progress') {
+          setStreamingMessage(chunk.message || '')
+        } else if (chunk.type === 'content') {
+          // Chunk de conteúdo - mostrar progressivamente
+          if (chunk.content) {
+            finalResponse = chunk.content  // O backend já envia o texto completo progressivo
+            setStreamingMessage(finalResponse)
+          }
+          if (chunk.agent_name) {
+            agentName = chunk.agent_name
+          }
+        } else if (chunk.type === 'completed') {
+          console.log('✅ Streaming concluído')
+          setIsStreaming(false)
+          setStreamingMessage('')
+
+          // Criar mensagem final
+          const assistantMessage: Message = {
+            id: `assistant-${Date.now()}`,
+            content: finalResponse || 'Resposta processada com sucesso.',
+            role: 'assistant',
+            timestamp: new Date().toISOString(),
+            agent_name: agentName
+          }
+
+          setMessages(prev => [...prev, assistantMessage])
+        } else if (chunk.type === 'error') {
+          console.error('❌ Erro no streaming:', chunk)
+          setIsStreaming(false)
+          setStreamingMessage('')
+
+          const errorMessage: Message = {
+            id: `error-${Date.now()}`,
+            content: chunk.message || 'Erro durante o processamento.',
+            role: 'assistant',
+            timestamp: new Date().toISOString(),
+            agent_name: 'Sistema'
+          }
+
+          setMessages(prev => [...prev, errorMessage])
+        }
+      })
 
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error)
-      
+      setIsStreaming(false)
+      setStreamingMessage('')
+
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         content: 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.',
@@ -385,7 +414,7 @@ export default function TeamChatPage() {
             ))
           )}
           
-          {loading && (
+          {(loading || isStreaming) && (
             <div className="flex gap-3 justify-start">
               <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
                 <Users size={16} className="text-green-600" />
@@ -393,23 +422,49 @@ export default function TeamChatPage() {
               <div className="bg-white text-gray-900 border border-gray-200 px-4 py-3 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
                   <Loader size={16} className="animate-spin text-green-600" />
-                  <span className="font-medium">O time está colaborando...</span>
+                  <span className="font-medium">
+                    {isStreaming ? 'O time está respondendo...' : 'O time está colaborando...'}
+                  </span>
                 </div>
-                <div className="text-xs text-gray-600 space-y-1">
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                    <span>Analisando tarefa e distribuindo entre membros</span>
-                  </div>
-                  {team.leader && (
-                    <div className="flex items-center gap-1">
-                      <Crown size={10} className="text-yellow-500" />
-                      <span>{team.leader.name} coordenando a equipe</span>
+
+                {isStreaming && streamingMessage && (
+                  <div className="mb-3 p-3 bg-gray-50 rounded-lg border-l-4 border-green-500">
+                    <div className="text-sm text-gray-700">
+                      <MarkdownRenderer content={streamingMessage} />
                     </div>
-                  )}
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-                    <span>Processando com {team.members.length} agentes especializados</span>
                   </div>
+                )}
+
+                <div className="text-xs text-gray-600 space-y-1">
+                  {isStreaming ? (
+                    <>
+                      <div className="flex items-center gap-1">
+                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                        <span>Resposta sendo construída em tempo real</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                        <span>Aguarde o processamento completo...</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-1">
+                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                        <span>Analisando tarefa e distribuindo entre membros</span>
+                      </div>
+                      {team.leader && (
+                        <div className="flex items-center gap-1">
+                          <Crown size={10} className="text-yellow-500" />
+                          <span>{team.leader.name} coordenando a equipe</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1">
+                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                        <span>Processando com {team.members.length} agentes especializados</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -433,11 +488,11 @@ export default function TeamChatPage() {
             />
             <button
               type="submit"
-              disabled={loading || !input.trim()}
+              disabled={loading || isStreaming || !input.trim()}
               className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <Send size={16} />
-              Enviar
+              {isStreaming ? 'Respondendo...' : 'Enviar'}
             </button>
           </div>
         </form>

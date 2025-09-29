@@ -59,6 +59,13 @@ model Users {
   @@map("users")
 }
 
+model GoogleApproved {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
 model CustomerSettings {
   id              Int    @id @default(autoincrement())
   customer_id     Int

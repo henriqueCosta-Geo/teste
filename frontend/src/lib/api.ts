@@ -164,7 +164,7 @@ export const agentsAPI = {
   },
 
   get: async (id: number): Promise<Agent> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/agents/${id}`)
+    const response = await fetchWithTimeout(`/api/proxy/api/agents/${id}`)
     return await handleResponse(response)
   },
 
@@ -200,7 +200,7 @@ export const agentsAPI = {
   },
 
   update: async (id: number, formData: FormData): Promise<{ message: string }> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/agents/${id}`, {
+    const response = await fetchWithTimeout(`/api/proxy/api/agents/${id}`, {
       method: 'PUT',
       headers: {}, // Let fetch set Content-Type for FormData
       body: formData,
@@ -209,7 +209,7 @@ export const agentsAPI = {
   },
 
   delete: async (id: number): Promise<void> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/agents/${id}`, {
+    const response = await fetchWithTimeout(`/api/proxy/api/agents/${id}`, {
       method: 'DELETE',
     })
     await handleResponse(response)
@@ -235,9 +235,9 @@ export const agentsAPI = {
     }
     
     console.log('API: Enviando chat para agente', agentId, 'com dados:', requestBody)
-    console.log('- URL:', `${API_BASE_URL}/api/agents/${agentId}/chat`)
+    console.log('- URL:', `/api/proxy/api/agents/${agentId}/chat`)
     
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/agents/${agentId}/chat`, {
+    const response = await fetchWithTimeout(`/api/proxy/api/agents/${agentId}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -256,7 +256,7 @@ export const agentsAPI = {
     access_level: string
     priority: number
   }): Promise<{ message: string }> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/agents/${agentId}/collections`, {
+    const response = await fetchWithTimeout(`/api/proxy/api/agents/${agentId}/collections`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -267,7 +267,7 @@ export const agentsAPI = {
   },
 
   removeCollection: async (agentId: number, collectionId: number): Promise<{ message: string }> => {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/agents/${agentId}/collections/${collectionId}`, {
+    const response = await fetchWithTimeout(`/api/proxy/api/agents/${agentId}/collections/${collectionId}`, {
       method: 'DELETE',
     })
     return await handleResponse(response)
@@ -347,6 +347,57 @@ export const teamsAPI = {
     const data = await handleResponse(response)
     console.log('API: Resposta da execução do time:', data)
     return data
+  },
+
+  executeStream: async (teamId: number, task: string, sessionId: string, onChunk: (chunk: any) => void): Promise<void> => {
+    console.log('API: Executando tarefa com streaming para time ID:', teamId)
+
+    const formData = new FormData()
+    formData.append('task', task)
+    formData.append('session_id', sessionId)
+    formData.append('stream', 'true')
+
+    const response = await fetch(`/api/proxy/api/teams/${teamId}/execute`, {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error('Stream não disponível')
+    }
+
+    const decoder = new TextDecoder()
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+
+        if (done) {
+          break
+        }
+
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              onChunk(data)
+            } catch (e) {
+              console.warn('Erro ao parsear chunk:', e)
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
   }
 }
 

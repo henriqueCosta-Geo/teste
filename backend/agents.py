@@ -266,7 +266,8 @@ class AgentManager:
             tools=tools,
             instructions=full_instructions,
             markdown=True,
-            structured_outputs=True
+            structured_outputs=True,
+            stream=True
         )
 
         # Cachear agente
@@ -453,7 +454,8 @@ Se o usuário NÃO especificar a máquina:
                 instructions=full_instructions,
                 tools=leader_agent.tools if hasattr(leader_agent, 'tools') else [],
                 markdown=True,
-                show_tool_calls=True
+                show_tool_calls=True,
+                stream=True
             )
         else:
             # Fallback para líder genérico se não especificado
@@ -469,7 +471,8 @@ Se o usuário NÃO especificar a máquina:
                     "Sempre cite qual agente contribuiu com cada parte da resposta"
                 ],
                 markdown=True,
-                show_tool_calls=True
+                show_tool_calls=True,
+                stream=True
             )
 
         return team
@@ -494,9 +497,25 @@ Se o usuário NÃO especificar a máquina:
 
             # Executar tarefa
             response = team.run(task)
-            
+
             logger.info(f"📨 RESPOSTA COMPLETA: {str(response)}")
-            
+
+            # Processar resposta - verificar se é generator (streaming)
+            if hasattr(response, '__iter__') and not hasattr(response, 'content'):
+                # É um generator - processar para obter resposta completa
+                full_response = ""
+                for chunk in response:
+                    if hasattr(chunk, 'content'):
+                        full_response += chunk.content
+                    else:
+                        full_response += str(chunk)
+                response_content = full_response
+                logger.info(f"📨 RESPOSTA PROCESSADA DO GENERATOR: {response_content[:200]}...")
+            elif hasattr(response, 'content'):
+                response_content = response.content
+            else:
+                response_content = str(response)
+
             # Verificar se houve delegação (múltiplas mensagens)
             if hasattr(response, 'messages') and response.messages:
                 logger.info(f"💬 NÚMERO DE MENSAGENS NA CONVERSA: {len(response.messages)}")
@@ -504,12 +523,6 @@ Se o usuário NÃO especificar a máquina:
                     logger.info(f"  MSG {i+1}: {str(msg)[:200]}...")
             else:
                 logger.info(f"⚠️ RESPOSTA SEM MENSAGENS DETALHADAS")
-
-            # Processar resposta
-            if hasattr(response, 'content'):
-                response_content = response.content
-            else:
-                response_content = str(response)
 
             execution_time = int((time.time() - start_time) * 1000)
 
@@ -891,9 +904,19 @@ Se o usuário NÃO especificar a máquina:
         
         specialist_agent = self._get_or_create_agent(specialist['id'], specialist)
         response = specialist_agent.run(specialist_context)
-        
-        # Processar resposta
-        response_content = response.content if hasattr(response, 'content') else str(response)
+
+        # Processar resposta - verificar se é generator (streaming)
+        if hasattr(response, '__iter__') and not hasattr(response, 'content'):
+            # É um generator - processar para obter resposta completa
+            full_response = ""
+            for chunk in response:
+                if hasattr(chunk, 'content'):
+                    full_response += chunk.content
+                else:
+                    full_response += str(chunk)
+            response_content = full_response
+        else:
+            response_content = response.content if hasattr(response, 'content') else str(response)
         execution_time = int((time.time() - start_time) * 1000)
         
         logger.info(f"✅ [TIME-{team_id}] ESPECIALISTA RESPONDEU: {len(response_content)} caracteres")
@@ -929,9 +952,19 @@ Se o usuário NÃO especificar a máquina:
         
         leader_agent = self._get_or_create_agent(leader_config['id'], leader_config)
         response = leader_agent.run(leader_context)
-        
-        # Processar resposta
-        response_content = response.content if hasattr(response, 'content') else str(response)
+
+        # Processar resposta - verificar se é generator (streaming)
+        if hasattr(response, '__iter__') and not hasattr(response, 'content'):
+            # É um generator - processar para obter resposta completa
+            full_response = ""
+            for chunk in response:
+                if hasattr(chunk, 'content'):
+                    full_response += chunk.content
+                else:
+                    full_response += str(chunk)
+            response_content = full_response
+        else:
+            response_content = response.content if hasattr(response, 'content') else str(response)
         execution_time = int((time.time() - start_time) * 1000)
         
         logger.info(f"✅ [TIME-{team_id}] LÍDER RESPONDEU: {len(response_content)} caracteres")
@@ -989,7 +1022,8 @@ Se o usuário NÃO especificar a máquina:
             instructions=agent_config.get('instructions', ''),
             tools=tools,
             debug_mode=False,
-            markdown=True
+            markdown=True,
+            stream=True
         )
         
         # Cache do agente

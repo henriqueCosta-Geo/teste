@@ -18,3 +18,4 @@ ddgs
 openai
 redis
 aioredis
+bcrypt

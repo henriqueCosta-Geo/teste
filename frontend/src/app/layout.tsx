@@ -8,8 +8,8 @@ import ClientLayout from '@/components/layout/client-layout'
 import { headers } from 'next/headers'
 
 export const metadata: Metadata = {
-  title: 'Qdrant Admin',
-  description: 'Interface de administração para Qdrant Vector Database com Agentes IA',
+  title: '',
+  description: 'Sistema Inteligente de Suporte Técnico da GeoCarbonite',
 }
 
 export default function RootLayout({

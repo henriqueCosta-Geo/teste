@@ -52,16 +52,35 @@ export default function SignInPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8 p-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            IntelliPro Troubleshooter
-          </h1>
-          <h2 className="text-xl font-semibold text-gray-600 mb-6">
-            Faça login na sua conta
-          </h2>
-        </div>
+    <div className="min-h-screen flex">
+      {/* Lado Esquerdo - Background SVG (60%) */}
+      <div
+        className="hidden lg:flex lg:w-3/5 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage: 'url(/images/login_background.svg)',
+          backgroundColor: '#f8fafc' // Fallback color
+        }}
+      >
+        {/* Apenas o background SVG, sem conteúdo adicional */}
+      </div>
+
+      {/* Lado Direito - Formulário de Login (40%) */}
+      <div className="w-full lg:w-2/5 flex items-center justify-center bg-white">
+        <div className="max-w-md w-full space-y-8 p-8">
+          {/* Logo GeoCarbonite - sempre visível no lado direito */}
+          <div className="text-center">
+            <img
+              src="/images/geocarbonite_logo.png"
+              alt="GeoCarbonite"
+              className="h-32 w-auto mx-auto mb-6"
+            />
+            <h2 className="text-xl font-semibold text-gray-600 mb-2">
+              Sistema Inteligente de Suporte
+            </h2>
+            <p className="text-gray-500 mb-8">
+              Faça login na sua conta
+            </p>
+          </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
@@ -127,10 +146,11 @@ export default function SignInPage() {
           </button>
         </form>
 
-        <div className="text-center">
-          <p className="text-sm text-gray-600">
-            Dados de teste: admin@example.com / admin123
-          </p>
+          <div className="text-center">
+            <p className="text-sm text-gray-600">
+              Dados de teste: admin@example.com / admin123
+            </p>
+          </div>
         </div>
       </div>
     </div>

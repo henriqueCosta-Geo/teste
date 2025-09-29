@@ -43,17 +43,17 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, onDelete }) => (
           </svg>
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
+          <h3 className="font-semibold text-sm truncate overflow-hidden" style={{ color: 'var(--text-primary)' }} title={agent.name}>
             {agent.name}
           </h3>
-          <p className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
+          <p className="text-xs truncate overflow-hidden" style={{ color: 'var(--text-tertiary)' }} title={agent.role || 'Assistente'}>
             {agent.role || 'Assistente'}
           </p>
         </div>
       </div>
       
-      <div className="flex items-center gap-2">
-        <span className={`px-2 py-1 rounded text-xs font-medium ${
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <span className={`px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ${
           agent.is_active 
             ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
             : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
@@ -62,7 +62,8 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, onDelete }) => (
         </span>
         <button
           onClick={() => onDelete(agent.id, agent.name)}
-          className="p-1 rounded hover:bg-red-50 text-red-500 hover:text-red-700 dark:hover:bg-red-900/20"
+          className="p-1 rounded hover:bg-red-50 text-red-500 hover:text-red-700 dark:hover:bg-red-900/20 flex-shrink-0"
+          title="Deletar agente"
         >
           <Trash2 size={14} />
         </button>
@@ -80,7 +81,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, onDelete }) => (
         <div className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>
           Modelo
         </div>
-        <div className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+        <div className="text-xs font-semibold truncate overflow-hidden" style={{ color: 'var(--text-primary)' }} title={agent.model}>
           {agent.model}
         </div>
       </div>
@@ -104,21 +105,22 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, onDelete }) => (
           {agent.collections.slice(0, 3).map((collection) => (
             <span 
               key={collection.id}
-              className="px-2 py-1 text-xs rounded"
-              style={{ 
-                backgroundColor: 'var(--bg-secondary)', 
-                color: 'var(--text-secondary)' 
+              className="px-2 py-1 text-xs rounded truncate overflow-hidden flex-shrink-0"
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                color: 'var(--text-secondary)'
               }}
+              title={collection.name}
             >
               {collection.name}
             </span>
           ))}
           {agent.collections.length > 3 && (
-            <span 
-              className="px-2 py-1 text-xs rounded"
-              style={{ 
-                backgroundColor: 'var(--bg-secondary)', 
-                color: 'var(--text-tertiary)' 
+            <span
+              className="px-2 py-1 text-xs rounded flex-shrink-0"
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                color: 'var(--text-tertiary)'
               }}
             >
               +{agent.collections.length - 3}
@@ -132,14 +134,15 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, onDelete }) => (
     <div className="flex gap-2">
       <Link
         href={`/agents/${agent.id}/chat`}
-        className="btn-primary flex-1 justify-center"
+        className="btn-primary flex-1 justify-center min-w-0"
       >
         <MessageSquare size={14} />
-        Chat
+        <span className="truncate">Chat</span>
       </Link>
       <Link
         href={`/agents/${agent.id}`}
-        className="btn-outline"
+        className="btn-outline flex-shrink-0"
+        title="Configurações"
       >
         <Settings size={14} />
       </Link>
