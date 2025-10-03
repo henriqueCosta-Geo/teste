@@ -203,7 +203,10 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                 <span>{session.user?.name || session.user?.email}</span>
               </div>
               <button
-                onClick={() => signOut({ callbackUrl: '/auth/signin' })}
+                onClick={() => {
+                  const baseUrl = window.location.origin
+                  signOut({ callbackUrl: `${baseUrl}/auth/signin` })
+                }}
                 className="flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
                 style={{ color: 'var(--text-secondary)' }}
               >
