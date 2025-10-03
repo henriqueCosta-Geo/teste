@@ -109,6 +109,11 @@ export class ServerMetadataOrchestrator {
         role: user.role,
         customer_slug: user.customer.slug
       },
+      customer: {
+        id: user.customer.id,
+        name: user.customer.name,
+        slug: user.customer.slug
+      },
       permissions: {
         can_manage_agents: user.role !== "USER" || metadata.features?.agents !== false,
         can_manage_collections: user.role !== "USER" || metadata.features?.collections !== false,
@@ -119,7 +124,8 @@ export class ServerMetadataOrchestrator {
       },
       limits: metadata.limits || {},
       ui: metadata.ui || {},
-      chat: metadata.chat || {}
+      chat: metadata.chat || {},
+      features: metadata.features || {}
     }
   }
 

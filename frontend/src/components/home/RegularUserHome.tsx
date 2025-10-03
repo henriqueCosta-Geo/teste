@@ -49,11 +49,7 @@ export default function RegularUserHome() {
         ? `/agents/${metadata.chat.default_agent}/chat`
         : metadata?.chat?.default_team
         ? `/teams/${metadata.chat.default_team}/chat`
-        : agents.length > 0
-        ? `/agents/${agents[0].id}/chat`
-        : teams.length > 0
-        ? `/teams/${teams[0].id}/chat`
-        : '/search'
+        : '/teams/3/chat'  // ✅ DEFAULT: Team ID 3
 
       // Redirecionar automaticamente
       router.push(defaultChatLink)

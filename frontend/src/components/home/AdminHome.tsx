@@ -56,11 +56,7 @@ export default function AdminHome() {
     ? `/agents/${metadata.chat.default_agent}/chat`
     : metadata?.chat?.default_team
     ? `/teams/${metadata.chat.default_team}/chat`
-    : availableOptions.length > 0
-    ? availableOptions[0].type === 'agent'
-      ? `/agents/${availableOptions[0].id}/chat`
-      : `/teams/${availableOptions[0].id}/chat`
-    : '/search'
+    : '/teams/3/chat'  // ✅ DEFAULT: Team ID 3
 
 
   return (
