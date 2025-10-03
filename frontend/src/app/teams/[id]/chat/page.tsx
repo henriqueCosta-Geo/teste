@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { Send, Users, User, ArrowLeft, Loader, Crown } from 'lucide-react'
 import { teamsAPI } from '@/lib/api'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
@@ -40,6 +41,7 @@ interface Team {
 export default function TeamChatPage() {
   const params = useParams()
   const router = useRouter()
+  const { data: session } = useSession()
   const [team, setTeam] = useState<Team | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -169,7 +171,10 @@ export default function TeamChatPage() {
       const response = teamsAPI.executeStream(teamId, {
         task: userMessage.content.trim(),
         session_id: sessionId,
-        stream: true
+        stream: true,
+        // ✅ Passar user_id e customer_id da sessão (se existirem)
+        user_id: session?.user?.id ? parseInt(session.user.id) : undefined,
+        customer_id: undefined  // TODO: pegar do contexto se houver
       })
 
       for await (const chunk of response) {

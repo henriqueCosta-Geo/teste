@@ -349,13 +349,27 @@ export const teamsAPI = {
     return data
   },
 
-  executeStream: async function* (teamId: number, data: { task: string; session_id: string; stream: boolean }) {
+  executeStream: async function* (teamId: number, data: {
+    task: string;
+    session_id: string;
+    stream: boolean;
+    customer_id?: number;
+    user_id?: number;
+  }) {
     console.log('API: Executando tarefa com streaming para time ID:', teamId)
 
     const formData = new FormData()
     formData.append('task', data.task)
     formData.append('session_id', data.session_id)
     formData.append('stream', data.stream ? 'true' : 'false')
+
+    // ✅ Adicionar customer_id e user_id se fornecidos
+    if (data.customer_id !== undefined && data.customer_id !== null) {
+      formData.append('customer_id', data.customer_id.toString())
+    }
+    if (data.user_id !== undefined && data.user_id !== null) {
+      formData.append('user_id', data.user_id.toString())
+    }
 
     const response = await fetch(`/api/proxy/api/teams/${teamId}/execute`, {
       method: 'POST',
