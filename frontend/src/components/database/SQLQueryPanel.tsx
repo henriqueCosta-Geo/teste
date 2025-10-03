@@ -31,8 +31,8 @@ export function SQLQueryPanel({ className = '' }: SQLQueryPanelProps) {
     setResult(null)
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const response = await fetch(`${backendUrl}/database/query`, {
+      // ✅ Usar rota de API do Next.js (proxy para o backend)
+      const response = await fetch('/api/database/query', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

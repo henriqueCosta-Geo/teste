@@ -350,7 +350,10 @@ async def execute_team_task(
             'sender': 'usuário',
             'session_id': session_id,
             'team_id': team_id,
-            'timestamp': datetime.now().isoformat()
+            'user_id': user_id,  # ✅ Adicionar user_id no metadata
+            'customer_id': customer_id,  # ✅ Adicionar customer_id no metadata
+            'timestamp': datetime.now().isoformat(),
+            'tokens': {'input': 0, 'output': 0, 'total': 0}  # ✅ Mensagem do usuário não consome tokens
         }
 
         if mongo_chat_svc:
@@ -430,15 +433,28 @@ async def execute_team_task(
                             await asyncio.sleep(0.03)  # Delay de 30ms
 
                         # Salvar resposta do time (MongoDB)
+                        # ✅ Garantir que tokens está no formato correto
+                        tokens_data = result.get('tokens', {'input': 0, 'output': 0, 'total': 0})
+
+                        # ✅ Determinar agent_id correto
+                        agents_involved = result.get('agents_involved', [])
+                        # Se é coordenador, marcar como "Coordenador"
+                        if agents_involved and 'Coordenador' in str(agents_involved):
+                            agent_id = "Coordenador"
+                        elif agents_involved and len(agents_involved) > 0:
+                            agent_id = agents_involved[0]
+                        else:
+                            agent_id = None
+
                         response_metadata = {
                             'execution_time_ms': int((time.time() - start_time) * 1000),
-                            'agents_involved': result.get('agents_involved', []),
+                            'agents_involved': agents_involved,
                             'team_id': team_id,
                             'sender': f"time-{team.name}",
                             'timestamp': datetime.now().isoformat(),
                             'rag': result.get('rag_used', False),
-                            'tokens': result.get('tokens', {'input': 0, 'output': 0, 'total': 0}),
-                            'agent_id': result.get('agents_involved', [None])[0] if result.get('agents_involved') else None
+                            'tokens': tokens_data,
+                            'agent_id': agent_id
                         }
 
                         if mongo_chat_svc:
@@ -499,12 +515,28 @@ async def execute_team_task(
 
             # Salvar resposta do time (MongoDB)
             if result.get('success'):
+                # ✅ Garantir que tokens está no formato correto
+                tokens_data = result.get('tokens', {'input': 0, 'output': 0, 'total': 0})
+
+                # ✅ Determinar agent_id correto
+                agents_involved = result.get('agents_involved', [])
+                # Se é coordenador, marcar como "Coordenador"
+                if agents_involved and 'Coordenador' in str(agents_involved):
+                    agent_id = "Coordenador"
+                elif agents_involved and len(agents_involved) > 0:
+                    agent_id = agents_involved[0]
+                else:
+                    agent_id = None
+
                 response_metadata = {
                     'execution_time_ms': result.get('execution_time_ms'),
-                    'agents_involved': result.get('agents_involved', []),
+                    'agents_involved': agents_involved,
                     'team_id': team_id,
                     'sender': f"time-{team.name}",
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now().isoformat(),
+                    'rag': result.get('rag_used', False),
+                    'tokens': tokens_data,
+                    'agent_id': agent_id
                 }
 
                 if mongo_chat_svc:

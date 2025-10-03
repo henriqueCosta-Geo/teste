@@ -96,11 +96,41 @@ class MongoChatService:
 
             # Extrair informações do metadata
             rag_used = metadata.get("rag", False) if metadata else False
-            user_assistant_id = metadata.get("agent_id") or metadata.get("team_id") if metadata else None
+
+            # ✅ CORRIGIR user_assistant_id:
+            # - Para mensagens do USER: pegar user_id ou customer_id do metadata
+            # - Para mensagens do TEAM/AGENT: pegar agent_id dos agents_involved ou agent_id direto
+            # - Para coordenador: usar "Coordenador"
+            user_assistant_id = None
+            if message_type == "user":
+                user_assistant_id = metadata.get("user_id") or metadata.get("customer_id") if metadata else None
+            elif message_type in ["team", "agent"]:
+                # Tentar pegar agent_id do metadata
+                if metadata:
+                    # Se tem agents_involved (lista), pegar o primeiro
+                    agents_involved = metadata.get("agents_involved", [])
+                    if agents_involved and len(agents_involved) > 0:
+                        user_assistant_id = agents_involved[0]
+                    # Se não, tentar pegar agent_id direto
+                    elif metadata.get("agent_id"):
+                        user_assistant_id = metadata.get("agent_id")
+                    # Se a mensagem é do coordenador (sender contém "coordenador")
+                    elif "coordenador" in str(metadata.get("sender", "")).lower():
+                        user_assistant_id = "Coordenador"
+
+            # ✅ CORRIGIR tokens: pegar 'total' do objeto tokens, não somar input+output
             tokens = metadata.get("tokens", {}) if metadata else {}
-            input_tokens = tokens.get("input", 0)
-            output_tokens = tokens.get("output", 0)
-            token_total = input_tokens + output_tokens
+            token_total = tokens.get("total", 0)
+
+            # Se total não veio, calcular a partir de input+output
+            if token_total == 0:
+                input_tokens = tokens.get("input", 0)
+                output_tokens = tokens.get("output", 0)
+                token_total = input_tokens + output_tokens
+            else:
+                # Se total veio, usar os valores de input/output se existirem
+                input_tokens = tokens.get("input", 0)
+                output_tokens = tokens.get("output", 0)
 
             # Criar documento de mensagem
             message_document = {
@@ -123,6 +153,16 @@ class MongoChatService:
             logger.info(f"   - mensagem_id: {message_document['mensagem_id']}")
             logger.info(f"   - message_type: {message_type}")
             logger.info(f"   - content length: {len(content)} chars")
+
+            # ✅ LOGGING DETALHADO para debug
+            logger.info(f"📊 [MONGO-TOKENS] Salvando mensagem:")
+            logger.info(f"   - Type: {message_type}")
+            logger.info(f"   - user_assistant_id: {user_assistant_id}")
+            logger.info(f"   - token_total: {token_total}")
+            logger.info(f"   - input_tokens: {input_tokens}")
+            logger.info(f"   - output_tokens: {output_tokens}")
+            logger.info(f"   - rag_used: {rag_used}")
+            logger.info(f"   - metadata recebido: {metadata}")
 
             # Criar documento REAL (sem truncar conteúdo)
             message_document_real = {
