@@ -77,17 +77,21 @@ async def _startup():
         mongo_service = None
 
     # Initialize metrics collection system
+    # ⚠️ METRICS COLLECTOR TEMPORARIAMENTE DESABILITADO (problema Redis no Railway)
     try:
         from metrics_collector import MetricsCollector
         import asyncio
 
         metrics_collector = MetricsCollector()
-        await metrics_collector.initialize()
+        redis_ok = await metrics_collector.initialize()
 
-        # Iniciar workers em background
-        asyncio.create_task(metrics_collector.start_workers())
-
-        logging.info("✅ Metrics collection system and workers initialized")
+        # Só iniciar workers se Redis estiver OK
+        if redis_ok:
+            asyncio.create_task(metrics_collector.start_workers())
+            logging.info("✅ Metrics collection system and workers initialized")
+        else:
+            logging.warning("⚠️ Metrics collector disabled - Redis not available")
+            metrics_collector = None
     except Exception as e:
         logging.error(f"❌ Failed to initialize metrics collector: {e}")
         metrics_collector = None
