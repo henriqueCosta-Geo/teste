@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Database, Table, Plus, Search, Filter, Edit, Trash2, RefreshCw } from 'lucide-react'
+import { Database, Table, Plus, Search, Filter, Edit, Trash2, RefreshCw, Terminal } from 'lucide-react'
 import { TableSelector } from './TableSelector'
 import { DataGrid } from './DataGrid'
 import { AddRecordModal } from './AddRecordModal'
 import { EditRecordModal } from './EditRecordModal'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
 import { DatabaseStatus } from './DatabaseStatus'
+import { SQLQueryPanel } from './SQLQueryPanel'
 
 interface DatabaseViewerProps {
   className?: string
@@ -44,6 +45,7 @@ export function DatabaseViewer({ className = '' }: DatabaseViewerProps) {
   const [showFilters, setShowFilters] = useState(false)
   const [page, setPage] = useState(1)
   const [limit] = useState(50)
+  const [activeTab, setActiveTab] = useState<'tables' | 'query'>('tables')
 
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false)
@@ -154,8 +156,36 @@ export function DatabaseViewer({ className = '' }: DatabaseViewerProps) {
               <Database className="w-5 h-5 text-green-600" />
               <h1 className="text-lg font-semibold text-gray-900">Database</h1>
             </div>
+
+            {/* Tabs */}
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setActiveTab('tables')}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'tables'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <Table className="w-4 h-4" />
+                Tabelas
+              </button>
+              <button
+                onClick={() => setActiveTab('query')}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'query'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <Terminal className="w-4 h-4" />
+                SQL
+              </button>
+            </div>
+
             <div className="text-sm text-gray-500">
-              {tablesLoading ? 'Loading...' : `Tables (${tables.length})`}
+              {activeTab === 'tables' && (tablesLoading ? 'Loading...' : `Tables (${tables.length})`)}
+              {activeTab === 'query' && 'Execute queries personalizadas'}
             </div>
           </div>
 
@@ -164,22 +194,46 @@ export function DatabaseViewer({ className = '' }: DatabaseViewerProps) {
             <DatabaseStatus />
           </div>
 
-          {tablesLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+          {activeTab === 'tables' && (
+            tablesLoading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+              </div>
+            ) : (
+              <TableSelector
+                tables={tables}
+                selectedTable={selectedTable}
+                onTableSelect={handleTableSelect}
+              />
+            )
+          )}
+
+          {activeTab === 'query' && (
+            <div className="flex-1 p-4 overflow-y-auto">
+              <div className="space-y-3">
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <h3 className="text-sm font-medium text-blue-900 mb-1">💡 Dica</h3>
+                  <p className="text-xs text-blue-700">
+                    Use Ctrl+Enter para executar a query rapidamente
+                  </p>
+                </div>
+
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <h3 className="text-sm font-medium text-yellow-900 mb-1">⚠️ Segurança</h3>
+                  <p className="text-xs text-yellow-700">
+                    Apenas queries SELECT são permitidas por segurança
+                  </p>
+                </div>
+              </div>
             </div>
-          ) : (
-            <TableSelector
-              tables={tables}
-              selectedTable={selectedTable}
-              onTableSelect={handleTableSelect}
-            />
           )}
         </div>
 
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {selectedTable ? (
+          {activeTab === 'query' ? (
+            <SQLQueryPanel />
+          ) : selectedTable ? (
             <>
               {/* Header */}
               <div className="bg-white border-b border-gray-200 p-4">
