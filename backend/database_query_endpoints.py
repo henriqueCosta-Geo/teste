@@ -15,6 +15,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/database", tags=["database"])
 
 
+class DDLCommandRequest(BaseModel):
+    """Request para executar comandos DDL (ALTER, CREATE, DROP, etc)"""
+    command: str
+    confirm: bool = False  # Exigir confirmação explícita
+
+    @validator('confirm')
+    def validate_confirmation(cls, v):
+        if not v:
+            raise ValueError("Você deve confirmar a execução do comando DDL definindo 'confirm: true'")
+        return v
+
+
 class QueryRequest(BaseModel):
     """Request para executar query SQL"""
     query: str
@@ -62,6 +74,80 @@ class TableSchema(BaseModel):
     """Schema detalhado de uma tabela"""
     table_name: str
     columns: List[Dict[str, Any]]
+
+
+@router.post("/ddl")
+async def execute_ddl_command(
+    request: DDLCommandRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Executar comandos DDL (ALTER, CREATE, DROP, etc)
+
+    ⚠️ ATENÇÃO: Este endpoint executa comandos que modificam a estrutura do banco.
+    Use com extrema cautela!
+
+    Comandos permitidos:
+    - ALTER TABLE
+    - CREATE TABLE
+    - DROP TABLE
+    - CREATE INDEX
+    - DROP INDEX
+    - ADD COLUMN
+    - DROP COLUMN
+    """
+    try:
+        command_upper = request.command.strip().upper()
+
+        # Lista de comandos DDL permitidos
+        allowed_ddl = ['ALTER', 'CREATE', 'DROP', 'ADD', 'MODIFY']
+
+        # Verificar se começa com comando DDL permitido
+        is_allowed = any(command_upper.startswith(cmd) for cmd in allowed_ddl)
+
+        if not is_allowed:
+            raise HTTPException(
+                status_code=400,
+                detail="Apenas comandos DDL são permitidos (ALTER, CREATE, DROP, etc)"
+            )
+
+        # Comandos extremamente perigosos que são bloqueados mesmo com confirmação
+        dangerous_patterns = [
+            'DROP DATABASE',
+            'DROP SCHEMA',
+            'TRUNCATE',
+        ]
+
+        for pattern in dangerous_patterns:
+            if pattern in command_upper:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Comando '{pattern}' não é permitido por segurança"
+                )
+
+        logger.warning(f"⚠️ EXECUTANDO COMANDO DDL: {request.command}")
+
+        # Executar comando DDL
+        db.execute(text(request.command))
+        db.commit()
+
+        logger.info(f"✅ Comando DDL executado com sucesso")
+
+        return {
+            "success": True,
+            "message": "Comando DDL executado com sucesso",
+            "command": request.command
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ Erro ao executar comando DDL: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Erro ao executar comando DDL: {str(e)}"
+        )
 
 
 @router.post("/query", response_model=QueryResult)

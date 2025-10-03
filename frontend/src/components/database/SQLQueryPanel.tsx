@@ -26,27 +26,77 @@ export function SQLQueryPanel({ className = '' }: SQLQueryPanelProps) {
       return
     }
 
+    const queryUpper = query.trim().toUpperCase()
+
+    // Detectar comandos DDL (ALTER, CREATE, DROP, etc)
+    const isDDL = queryUpper.startsWith('ALTER') ||
+                  queryUpper.startsWith('CREATE') ||
+                  queryUpper.startsWith('DROP') ||
+                  queryUpper.startsWith('TRUNCATE')
+
+    // Se for DDL, pedir confirmação
+    if (isDDL) {
+      const confirmed = window.confirm(
+        '⚠️ ATENÇÃO: Você está prestes a executar um comando que pode modificar a estrutura do banco de dados.\n\n' +
+        'Comando: ' + query.substring(0, 100) + (query.length > 100 ? '...' : '') + '\n\n' +
+        'Tem certeza que deseja continuar?'
+      )
+
+      if (!confirmed) {
+        return
+      }
+    }
+
     setLoading(true)
     setError(null)
     setResult(null)
 
     try {
-      // ✅ Usar rota de API do Next.js (proxy para o backend)
-      const response = await fetch('/api/database/query', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query: query.trim() }),
-      })
+      let response
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || 'Erro ao executar query')
+      if (isDDL) {
+        // Usar endpoint DDL com confirmação
+        response = await fetch('/api/database/ddl', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            command: query.trim(),
+            confirm: true
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.detail || errorData.error || 'Erro ao executar comando DDL')
+        }
+
+        const data = await response.json()
+        // Para DDL, mostrar mensagem de sucesso
+        setResult({
+          columns: ['Resultado'],
+          rows: [{ 'Resultado': data.message || 'Comando executado com sucesso' }],
+          row_count: 1
+        })
+      } else {
+        // Usar endpoint de query SELECT
+        response = await fetch('/api/database/query', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ query: query.trim() }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.detail || errorData.error || 'Erro ao executar query')
+        }
+
+        const data = await response.json()
+        setResult(data)
       }
-
-      const data = await response.json()
-      setResult(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido')
     } finally {
