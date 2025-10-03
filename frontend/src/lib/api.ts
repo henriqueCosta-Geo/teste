@@ -21,7 +21,7 @@ async function handleResponse(response: Response) {
 // Função auxiliar para fazer requisições
 async function fetchWithTimeout(url: string, options: RequestInit = {}) {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 segundos
+  const timeoutId = setTimeout(() => controller.abort(), 120000) // 120 segundos (2 minutos) para respostas de times complexas
   
   try {
     const response = await fetch(url, {
@@ -349,13 +349,13 @@ export const teamsAPI = {
     return data
   },
 
-  executeStream: async (teamId: number, task: string, sessionId: string, onChunk: (chunk: any) => void): Promise<void> => {
+  executeStream: async function* (teamId: number, data: { task: string; session_id: string; stream: boolean }) {
     console.log('API: Executando tarefa com streaming para time ID:', teamId)
 
     const formData = new FormData()
-    formData.append('task', task)
-    formData.append('session_id', sessionId)
-    formData.append('stream', 'true')
+    formData.append('task', data.task)
+    formData.append('session_id', data.session_id)
+    formData.append('stream', data.stream ? 'true' : 'false')
 
     const response = await fetch(`/api/proxy/api/teams/${teamId}/execute`, {
       method: 'POST',
@@ -386,11 +386,19 @@ export const teamsAPI = {
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6).trim()
+
+            // Ignorar [DONE] - é marcador de fim de stream, não JSON
+            if (dataStr === '[DONE]') {
+              console.log('✅ Stream finalizado [DONE]')
+              continue
+            }
+
             try {
-              const data = JSON.parse(line.slice(6))
-              onChunk(data)
+              const data = JSON.parse(dataStr)
+              yield data
             } catch (e) {
-              console.warn('Erro ao parsear chunk:', e)
+              console.warn('Erro ao parsear chunk:', e, 'Linha:', dataStr)
             }
           }
         }

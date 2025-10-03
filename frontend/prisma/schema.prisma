@@ -16,7 +16,8 @@ model customers {
   id            Int       @id @default(autoincrement())
   name          String    @unique
   slug          String    @unique // para URLs amigáveis
-  metadata_file String?   // caminho para arquivo de metadados TOML
+  metadata_file String?   // DEPRECATED: caminho para arquivo de metadados TOML
+  metadata_toml String?   @db.Text // Conteúdo TOML armazenado diretamente no banco
   is_active     Boolean   @default(true)
   created_at    DateTime?  @default(now())
   updated_at    DateTime? @updatedAt
@@ -36,7 +37,7 @@ model Users {
   password      String?   // argon2 hash - opcional para OAuth
   emailVerified DateTime? // Para Auth.js
   image         String?   // Para Auth.js (avatar)
-  role          UserRole  @default(REGULAR)
+  role          UserRole  @default(USER)
   customer_id   Int
   is_active     Boolean   @default(true)
   last_login    DateTime?
@@ -391,7 +392,7 @@ model VerificationToken {
 // ============================================================================
 
 enum UserRole {
-  REGULAR    // Cliente regular - só chat
+  USER       // Cliente regular - só chat
   ADMIN      // Cliente admin - dashboard + chat
   SUPER_USER // Desenvolvedor - acesso total
 }

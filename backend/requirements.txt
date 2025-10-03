@@ -13,9 +13,12 @@ python-docx
 pandas
 numpy
 fastapi-cors
-agno==2.0.3
+agno
 ddgs
 openai
 redis
 aioredis
 bcrypt
+starlette
+motor>=3.3.0
+pymongo>=4.6.0

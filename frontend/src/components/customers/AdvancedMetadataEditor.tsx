@@ -86,13 +86,15 @@ export const AdvancedMetadataEditor: React.FC<AdvancedMetadataEditorProps> = ({
   const [teams, setTeams] = useState<any[]>([])
   const [loadingAgents, setLoadingAgents] = useState(false)
   const [loadingTeams, setLoadingTeams] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false)
 
-  // Parse existing TOML content
+  // Parse existing TOML content ONLY on first load
   useEffect(() => {
-    if (content) {
+    if (content && !isInitialized) {
       parseTomlToConfig(content)
+      setIsInitialized(true)
     }
-  }, [])
+  }, [content, isInitialized])
 
   // Sync logo path from parent
   useEffect(() => {

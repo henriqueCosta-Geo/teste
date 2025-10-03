@@ -20,9 +20,12 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 from agno.agent import Agent
+from agno.team import Team  # ✅ Nova importação para criar teams
 from agno.models.openai import OpenAIChat
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.reasoning import ReasoningTools
+from agno.db.postgres import PostgresDb  # ✅ Storage para persistir sessão e histórico
+from agno.memory import MemoryManager  # ✅ Gerenciador de memória
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -144,14 +147,39 @@ class AgentManager:
         self.db = db
         self.qdrant_service = qdrant_service
         self.active_agents = {}  # Cache de agentes ativos
+        self.active_teams = {}  # ✅ Cache de teams ativos por session_id
         self.execution_history = []
+
+        # ✅ Configurar PostgresDb e MemoryManager para persistir contexto
+        database_url = os.getenv("DATABASE_URL")
+        logger.info(f"🔍 [AGNO-DB] DATABASE_URL lida do .env: {database_url}")
+
+        if database_url:
+            try:
+                logger.info(f"🔄 [AGNO-DB] Tentando criar PostgresDb com URL: {database_url}")
+                self.agno_db = PostgresDb(db_url=database_url)  # ✅ Parâmetro correto: db_url
+                logger.info(f"✅ [AGNO-DB] PostgresDb criado com sucesso: {self.agno_db}")
+
+                self.memory_manager = MemoryManager(db=self.agno_db)
+                logger.info(f"✅ [AGNO-DB] MemoryManager criado com sucesso: {self.memory_manager}")
+
+                logger.info("✅ PostgresDb e MemoryManager configurados para persistir contexto")
+            except Exception as e:
+                logger.error(f"❌ Erro ao configurar PostgresDb: {e}")
+                logger.error(f"❌ Traceback completo:", exc_info=True)
+                self.agno_db = None
+                self.memory_manager = None
+        else:
+            logger.warning("⚠️ DATABASE_URL não configurada - contexto não será persistido")
+            self.agno_db = None
+            self.memory_manager = None
+
+        logger.info(f"📊 [AGNO-DB] Estado final - agno_db: {self.agno_db}, memory_manager: {self.memory_manager}")
 
     def get_agent_collections(self, agent_id: int) -> List[Dict]:
         """
         Retorna coleções que o agente pode acessar com seus níveis de permissão
         """
-        logger.info(f"🔍 [AGENT-{agent_id}] BUSCANDO COLEÇÕES RAG ASSOCIADAS...")
-        
         query = text("""
             SELECT c.name, c.id, ac.access_level, ac.priority
             FROM collections c
@@ -171,14 +199,144 @@ class AgentManager:
                 "priority": row.priority
             }
             collections.append(collection_data)
-            logger.info(f"   📚 [AGENT-{agent_id}] COLEÇÃO: {row.name} (ID: {row.id}) - Acesso: {row.access_level}, Prioridade: {row.priority}")
 
         if not collections:
-            logger.warning(f"⚠️ [AGENT-{agent_id}] NENHUMA COLEÇÃO RAG ENCONTRADA")
+            logger.debug(f"[AGENT-{agent_id}] Nenhuma coleção RAG encontrada")
         else:
             logger.info(f"✅ [AGENT-{agent_id}] ENCONTRADAS {len(collections)} COLEÇÕES RAG")
 
         return collections
+
+    # agents.py  (dentro de AgentManager)
+    def stream_team_task_with_context(self, team_id: int, task: str, context_history: list | None = None, session_id: str = None):
+        """
+        Executa a tarefa para um time de agentes emitindo eventos de streaming (para SSE).
+        Rende dicts já no formato esperado pelo frontend (type, message/content, agent_name...).
+
+        Args:
+            team_id: ID do time
+            task: Tarefa
+            context_history: Histórico (para construir contexto textual)
+            session_id: ID da sessão - CRÍTICO para manter memória do Team
+        """
+        context_history = context_history or []
+        try:
+            # ==== carrega time, membros e líder (mesma lógica do método com retorno "não stream") ====
+            team = self.db.query(AgentTeam).filter(AgentTeam.id == team_id).first()
+            if not team:
+                yield {"type": "error", "message": f"Time {team_id} não encontrado"}
+                return
+
+            # membros (exclui líder) — mesma query usada hoje
+            team_members_query = self.db.query(
+                TeamMember.agent_id,
+                AgentModel.name,
+                AgentModel.description,
+                AgentModel.role,
+                AgentModel.model,
+                AgentModel.temperature,
+                AgentModel.instructions,
+                AgentModel.tools_config
+            ).join(AgentModel, TeamMember.agent_id == AgentModel.id).filter(
+                TeamMember.team_id == team_id,
+                AgentModel.is_active == True,
+                TeamMember.agent_id != team.leader_agent_id
+            )
+
+            team_members = []
+            for r in team_members_query:
+                team_members.append({
+                    "id": r.agent_id, "name": r.name, "description": r.description, "role": r.role,
+                    "model": r.model, "temperature": r.temperature, "instructions": r.instructions,
+                    "tools_config": r.tools_config or []
+                })
+
+            if not team_members:
+                yield {"type": "error", "message": f"Nenhum membro ativo no time {team_id}"}
+                return
+
+            leader_config = None
+            if team.leader_agent_id:
+                leader = self.db.query(AgentModel).filter(
+                    AgentModel.id == team.leader_agent_id, AgentModel.is_active == True
+                ).first()
+                if leader:
+                    leader_config = {
+                        "id": leader.id, "name": leader.name, "description": leader.description, "role": leader.role,
+                        "model": leader.model, "temperature": leader.temperature,
+                        "instructions": leader.instructions, "tools_config": leader.tools_config or []
+                    }
+            if not leader_config:
+                yield {"type": "error", "message": f"Líder do time {team_id} não encontrado ou inativo"}
+                return
+
+            # contexto enriquecido (mesma função usada hoje)
+            team_context = self._build_team_context(
+                team=team, leader=leader_config, members=team_members, task=task, history=context_history
+            )
+
+            team_agent = self._create_team_agent(team_id=team_id, leader_config=leader_config, team_members=team_members, team_context=team_context, session_id=session_id)
+
+            # sinaliza início
+            yield {"type": "start", "team_id": team_id, "team_name": team.name}
+
+            # executa com o Agno
+            logger.info(f"💾 [STREAM TIME-{team_id}] SESSION_ID: {session_id}")
+
+            # ✅ Executar com session_id, user_id e flags de histórico
+            if session_id:
+                response = team_agent.run(
+                    task,
+                    session_id=session_id,
+                    user_id=None,
+                    add_history_to_context=True,
+                    num_history_runs=6
+                )
+            else:
+                logger.warning(f"⚠️ [STREAM TIME-{team_id}] SESSION_ID NÃO FORNECIDO!")
+                response = team_agent.run(task)
+
+            # 3 casos: RunResponse com .content; generator (event stream); ou string
+            final_text = ""
+            delegated_agent_name = None
+
+            # a) objeto com .content
+            if hasattr(response, "content"):
+                final_text = response.content or ""
+                yield {"type": "content", "content": final_text, "agent_name": leader_config["name"]}
+
+            # b) iterável/generator (stream real)
+            elif hasattr(response, "__iter__"):
+                for event in response:
+                    etype = type(event).__name__
+                    # conteúdo parcial
+                    if hasattr(event, "content") and getattr(event, "content"):
+                        chunk = str(event.content)
+                        final_text += chunk
+                        yield {"type": "content", "content": chunk, "agent_name": delegated_agent_name}
+                    # tentativa de detectar delegação via ToolCallStartedEvent (compatível com tua lógica atual)
+                    if "ToolCallStartedEvent" in etype:
+                        tool = getattr(event, "tool", None)
+                        tool_args = getattr(tool, "tool_args", {}) if tool else {}
+                        maybe_agent = None
+                        if isinstance(tool_args, dict):
+                            maybe_agent = tool_args.get("agent_name") or tool_args.get("member") or tool_args.get("member_id")
+                        if maybe_agent:
+                            delegated_agent_name = maybe_agent
+                            yield {"type": "progress", "message": f"Delegando para {maybe_agent}..."}
+
+            # c) fallback para string
+            else:
+                final_text = str(response)
+                if final_text:
+                    yield {"type": "content", "content": final_text, "agent_name": leader_config["name"]}
+
+            # fim
+            yield {"type": "completed", "content": final_text, "agent_name": delegated_agent_name or leader_config["name"]}
+
+        except Exception as e:
+            yield {"type": "error", "message": str(e)}
+
 
     def create_agent_instance(self, agent_config: Dict) -> Agent:
         """
@@ -445,24 +603,22 @@ Se o usuário NÃO especificar a máquina:
             logger.info(f"🔧 CONTEXTO DE TRIAGEM GERADO: {team_context[-800:]}")
             logger.info(f"👥 MEMBROS NO TIME: {len(team_members)} - {[m.get('name') for m in team_members]}")
             
-            # Criar time com o líder específico
-            team = Agent(
+            # Criar time com o líder específico usando a nova classe Team
+            team = Team(
                 name=leader_agent.name,
                 role=leader_agent.role,
-                team=member_agents,
+                members=member_agents,
                 model=leader_agent.model,
                 instructions=full_instructions,
-                tools=leader_agent.tools if hasattr(leader_agent, 'tools') else [],
                 markdown=True,
-                show_tool_calls=True,
                 stream=True
             )
         else:
             # Fallback para líder genérico se não especificado
             leader_model = OpenAIChat(id='gpt-4o-mini')
-            
-            team = Agent(
-                team=member_agents,
+
+            team = Team(
+                members=member_agents,
                 model=leader_model,
                 instructions=[
                     "Coordene os agentes do time para resolver a tarefa",
@@ -471,7 +627,6 @@ Se o usuário NÃO especificar a máquina:
                     "Sempre cite qual agente contribuiu com cada parte da resposta"
                 ],
                 markdown=True,
-                show_tool_calls=True,
                 stream=True
             )
 
@@ -547,25 +702,505 @@ Se o usuário NÃO especificar a máquina:
                 "timestamp": datetime.now().isoformat()
             }
 
-    def execute_team_task_with_context(self, team_id: int, task: str, context_history: List[Dict] = None) -> Dict:
+    def _extract_keywords(self, member: Dict, log_details: bool = False) -> List[str]:
+        """Extrai keywords de máquinas das descrições dos agentes"""
+        name = member.get('name', '')
+        role = member.get('role', '')
+        description = member.get('description', '')
+        text = f"{name} {role} {description}".lower()
+
+        # Padrões comuns de máquinas
+        patterns = [
+            r'ch\s*\d+',  # CH570, CH 570
+            r'a\s*\d+',   # A9000, A 9000
+            r'\d{3,5}',   # 570, 9000
+        ]
+
+        keywords = []
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            keywords.extend([m.replace(' ', '') for m in matches])
+
+        unique_keywords = list(set(keywords))
+
+        # LOG apenas se requisitado (evitar logs repetidos)
+        if log_details and unique_keywords:
+            logger.info(f"🔍 [KEYWORDS] {name}: {unique_keywords}")
+
+        return unique_keywords
+
+    def _format_collections(self, collections: List[Dict]) -> str:
+        """Formata descrição das coleções disponíveis"""
+        if not collections:
+            return "Nenhuma base de conhecimento disponível."
+
+        formatted = []
+        for col in collections:
+            desc = col.get('description', 'Base de conhecimento técnico')
+            formatted.append(f"- **{col['name']}**: {desc}")
+
+        return '\n'.join(formatted)
+
+    def _format_specialists(self, specialists: List[Dict]) -> str:
+        """Formata especialistas de forma clara para o líder"""
+        formatted = []
+
+        for spec in specialists:
+            keywords = self._extract_keywords(spec)
+            agent_collections = self.get_agent_collections(spec['id'])
+
+            formatted.append(f"""
+### {spec['name']}
+- **Papel:** {spec['role']}
+- **Especialidade:** {spec.get('description', 'Especialista técnico')}
+- **Atende sobre:** {', '.join(keywords) if keywords else 'Consultas gerais'}
+- **Bases de conhecimento:** {len(agent_collections)} coleção(ões) disponível(is)
+""")
+
+        return '\n'.join(formatted)
+
+    def _build_specialist_mapping(self, specialists: List[Dict]) -> str:
+        """Cria tabela de mapeamento máquina → especialista"""
+        mapping_lines = []
+
+        logger.info(f"📊 [CONSTRUINDO MAPEAMENTO] Total de especialistas: {len(specialists)}")
+
+        for spec in specialists:
+            keywords = self._extract_keywords(spec, log_details=True)  # Log apenas aqui
+
+            if keywords:
+                # Criar variações comuns
+                variations = set()
+                for kw in keywords:
+                    variations.add(kw.upper())
+                    variations.add(kw.lower())
+                    # Adicionar com espaços (ex: "a 9000")
+                    if len(kw) >= 4:
+                        spaced = ' '.join(kw[i:i+1] for i in range(len(kw)))
+                        variations.add(spaced)
+
+                variations_str = ', '.join(sorted(variations)[:8])  # Limitar para não ficar muito longo
+                mapping_line = f"- **{variations_str}** → {spec['name']}"
+                mapping_lines.append(mapping_line)
+
+        result = '\n'.join(mapping_lines) if mapping_lines else "Nenhum mapeamento específico disponível"
+        logger.info(f"📋 [MAPEAMENTO FINAL] {len(mapping_lines)} linhas geradas")
+        return result
+
+    def _find_specialist_by_keyword(self, specialists: List[Dict], keyword: str) -> str:
+        """Encontra nome do especialista que atende determinada keyword"""
+        keyword_lower = keyword.lower().replace(' ', '')
+
+        for spec in specialists:
+            keywords = self._extract_keywords(spec)  # Sem log detalhado
+            for kw in keywords:
+                kw_normalized = kw.lower().replace(' ', '')
+                match_exact = kw_normalized == keyword_lower
+                match_contains = keyword_lower in kw_normalized
+
+                if match_exact or match_contains:
+                    return spec['name']
+
+        return "Especialista não encontrado"
+
+    def _build_team_context(self, team, leader, members: List[Dict], task: str, history: List[Dict]) -> str:
         """
-        Executa uma tarefa em equipe considerando o contexto completo da conversa
-        Sistema flexível que suporta diferentes estratégias de delegação
+        Constrói contexto DINÂMICO para complementar instruções do líder.
+        NÃO duplica informações que já estão nas instruções do banco.
+        Apenas adiciona: histórico da conversa e mapeamento técnico de especialistas.
         """
+
+        # Formatar histórico
+        history_text = ""
+        if history:
+            history_text = "## 💬 HISTÓRICO DA CONVERSA\n"
+            for msg in history[-5:]:  # Últimas 5 mensagens
+                msg_type = msg.get('type', 'unknown')
+                content = msg.get('content', '')
+                if msg_type == 'user':
+                    history_text += f"**Usuário:** {content}\n"
+                elif msg_type in ['team', 'agent']:
+                    history_text += f"**Assistente:** {content}\n"
+
+        # Criar mapeamento de variações de nomes para especialistas
+        specialist_mapping = self._build_specialist_mapping(members)
+
+        # Contexto simplificado - apenas informações dinâmicas que complementam as instruções do banco
+        context_parts = []
+
+        # ⚠️ REGRA CRÍTICA - DELEGAÇÃO OBRIGATÓRIA
+        context_parts.append("""
+## ⚠️ PROTOCOLO DE DELEGAÇÃO OBRIGATÓRIA
+
+**VOCÊ É UM COORDENADOR - SUA ÚNICA FUNÇÃO É ROTEAR**
+
+🔥 **FUNÇÃO DE DELEGAÇÃO CORRETA:**
+✅ A ÚNICA função válida é: `delegate_task_to_member(member_id, task_description, expected_output)`
+✅ Use `member_id` com o ID do agente (formato: "agent-123")
+❌ NÃO use `agent_name`, `member`, ou `transfer_task_to_member` - são INCORRETOS
+
+⚠️ **VOCÊ NÃO TEM ACESSO A BASES DE CONHECIMENTO (RAG)**
+⚠️ **VOCÊ NÃO DEVE USAR A FUNÇÃO `search()` - APENAS OS ESPECIALISTAS TÊM ESSA FERRAMENTA**
+
+### 🚨 REGRA CRÍTICA DE IDENTIFICAÇÃO DE MODELO
+
+**ATENÇÃO MÁXIMA AO MODELO MENCIONADO PELO USUÁRIO:**
+
+**Case IH (Série A):**
+- A8000, A8800, A8810, 8000, 8800, 8810 → SEMPRE delegar para: **"Especialista Case IH A8000/A8800/A8810"**
+- A9000, A9900, 9000, 9900 → SEMPRE delegar para: **"Especialista Case IH A9000"**
+
+**John Deere (Série CH):**
+- CH570, CH670, 570, 670 → SEMPRE delegar para: **"Especialista John Deere CH570/CH670"**
+- CH950, 950 → SEMPRE delegar para: **"Especialista John Deere CH950"**
+
+**❌ ERROS FATAIS A EVITAR:**
+- ❌ NUNCA delegue A8810 para "Especialista John Deere CH950"
+- ❌ NUNCA delegue CH950 para "Especialista Case IH A8000/A8800/A8810"
+- ❌ NUNCA confunda Case IH (letra A) com John Deere (letra CH)
+- ❌ São MARCAS DIFERENTES e MODELOS DIFERENTES!
+
+### 🚫 REGRA ANTI-LOOP - LEIA COM ATENÇÃO!
+
+**ANTES de fazer QUALQUER ação, VERIFIQUE O HISTÓRICO:**
+
+1. ✅ **Você já delegou esta tarefa antes?**
+   - Procure no histórico por "delegate_task_to_member"
+   - Se SIM → **PARE IMEDIATAMENTE**. Não delegue novamente, não responda, não faça NADA.
+
+2. ✅ **A última mensagem foi de um especialista?**
+   - Se SIM → **PARE IMEDIATAMENTE**. Não interfira. O especialista já está respondendo.
+
+3. ✅ **Esta é uma NOVA pergunta do usuário?**
+   - Se NÃO → **PARE IMEDIATAMENTE**. Não repita delegação.
+
+**⚠️ REGRA DE OURO: Você delega APENAS UMA VEZ por nova solicitação do usuário.**
+
+### 🚫 NUNCA RETORNE CÓDIGO OU FERRAMENTAS COMO TEXTO!
+
+**PROIBIDO ABSOLUTAMENTE:**
+❌ NUNCA escreva "delegate_task_to_member(...)" como texto de resposta
+❌ NUNCA mostre código Python, JSON ou qualquer sintaxe ao usuário
+❌ NUNCA explique que você está "delegando" ou "usando ferramentas"
+
+**SEMPRE:**
+✅ EXECUTE a ferramenta `delegate_task_to_member()` SILENCIOSAMENTE
+✅ Após executar, PARE - não envie mensagem adicional
+✅ Se precisa perguntar algo, responda em linguagem natural (português)
+
+### 📋 Quando e Como Delegar:
+
+Quando o usuário mencionar um modelo específico (ex: A8810, CH950, A9000, CH570):
+1. ✅ Verifique o histórico (evite delegação duplicada)
+2. ✅ SEMPRE use `delegate_task_to_member(member_id="agent-123", task_description="tarefa", expected_output="resposta técnica")` IMEDIATAMENTE
+3. ❌ NUNCA tente responder você mesmo sobre questões técnicas
+4. ❌ NUNCA use `search()` - você não tem acesso a essa função
+5. ✅ Delegue a tarefa COMPLETA com TODO o contexto necessário
+6. ✅ **APÓS DELEGAR → PARE. Não envie mensagens adicionais.**
+
+**Você só pode responder diretamente quando:**
+- Usuário ainda não informou o modelo E não há delegação prévia
+- Você precisa fazer perguntas de esclarecimento para identificar o modelo correto
+
+**⭐ Formato OBRIGATÓRIO de delegação:**
+```python
+delegate_task_to_member(
+    member_id="agent-123",  # ID do especialista (veja tabela abaixo)
+    task_description="Usuário relata: pistões hidráulicos dando coices na A8810. Por favor, diagnostique e forneça solução completa.",
+    expected_output="Diagnóstico técnico completo com possíveis causas e soluções detalhadas para o problema nos pistões hidráulicos."
+)
+```
+
+**REGRAS CRÍTICAS:**
+- ✅ Use `member_id="agent-123"` (STRING com ID do agente - veja tabela de mapeamento abaixo)
+- ✅ Use `task_description="descrição completa da tarefa"`
+- ✅ Use `expected_output="descrição do resultado esperado"`
+- ❌ NÃO use `agent_name`, `member`, `transfer_task_to_member` - são INCORRETOS
+- ✅ A ÚNICA função válida é `delegate_task_to_member`
+- ✅ Após chamar a função, PARE - não envie mensagem ao usuário
+""")
+
+        # Adicionar histórico se existir
+        if history_text:
+            context_parts.append(f"---\n{history_text}")
+
+        # Adicionar mapeamento técnico de especialistas disponíveis
+        # DEBUG: Log dos mapeamentos gerados para verificar se estão corretos
+        a9000_specialist = self._find_specialist_by_keyword(members, '9000')
+        ch570_specialist = self._find_specialist_by_keyword(members, '570')
+        a8810_specialist = self._find_specialist_by_keyword(members, '8810')
+        ch950_specialist = self._find_specialist_by_keyword(members, '950')
+
+        logger.info(f"📋 [MAPEAMENTOS GERADOS]")
+        logger.info(f"   - A9000/9000 → {a9000_specialist}")
+        logger.info(f"   - CH570/570 → {ch570_specialist}")
+        logger.info(f"   - A8810/8810 → {a8810_specialist}")
+        logger.info(f"   - CH950/950 → {ch950_specialist}")
+
+        context_parts.append(f"""---
+
+## 🔧 TABELA DE DELEGAÇÃO - SIGA EXATAMENTE
+
+| USUÁRIO MENCIONA | DELEGUE PARA (copie EXATO) | MARCA |
+|------------------|----------------------------|-------|
+| A8000, A8800, A8810, 8000, 8800, 8810 | {a8810_specialist} | Case IH |
+| A9000, A9900, 9000, 9900 | {a9000_specialist} | Case IH |
+| CH570, CH670, 570, 670 | {ch570_specialist} | John Deere |
+| CH950, 950 | {ch950_specialist} | John Deere |
+
+### ⭐ INSTRUÇÕES DE USO DA TABELA:
+
+**Passo 1:** Identifique o modelo que o usuário mencionou
+**Passo 2:** Procure na PRIMEIRA coluna da tabela
+**Passo 3:** Copie EXATAMENTE o nome da SEGUNDA coluna
+**Passo 4:** Use assim:
+
+```python
+transfer_task_to_member(
+    agent_name="<Nome EXATO copiado da tabela>",
+    task_description="<Descrição completa da tarefa do usuário>",
+    expected_output="Resposta técnica detalhada com diagnóstico e soluções"
+)
+```
+
+### 📋 Especialistas Disponíveis:
+
+{self._format_specialists(members)}
+
+### Mapeamento Técnico:
+{specialist_mapping}
+
+**⚠️ VERIFICAÇÕES OBRIGATÓRIAS:**
+1. ✅ Verifique o histórico - modelo pode ter sido mencionado antes
+2. ✅ Use `agent_name="Nome Completo"` (STRING com nome exato)
+3. ✅ Copie o nome EXATAMENTE como está na tabela
+4. ✅ A ÚNICA função válida é `transfer_task_to_member`
+5. ✅ NUNCA use `delegate_task_to_member`, `delegate`, `member` ou `member_id`
+6. ✅ Inclua sempre os 3 parâmetros: `agent_name`, `task_description`, `expected_output`
+7. ✅ Caso usuário mencione "A8810" → use "{a8810_specialist}" (NÃO use "{ch950_specialist}"!)
+""")
+
+        context = "\n".join(context_parts)
+
+        # DEBUG: Salvar contexto para análise
+        logger.info(f"📄 [CONTEXTO GERADO PARA COORDENADOR]")
+        logger.info(f"   - Tamanho total: {len(context)} caracteres")
+        logger.info(f"   - Exemplos de delegação incluem:")
+        logger.info(f"     • A9000/9000 → {a9000_specialist}")
+        logger.info(f"     • CH570/570 → {ch570_specialist}")
+        logger.info(f"     • A8810/8810 → {a8810_specialist}")
+        logger.info(f"     • CH950/950 → {ch950_specialist}")
+
+        return context
+
+    def _build_agent_instructions(self, agent_config: Dict, agent_collections: List[Dict]) -> str:
+        """Constrói instruções com orientação inteligente de RAG"""
+
+        base_instructions = agent_config.get('instructions', '')
+
+        if not agent_collections:
+            return base_instructions
+
+        rag_instructions = f"""
+
+---
+
+## 🔍 BASES DE CONHECIMENTO DISPONÍVEIS
+
+Você tem acesso a {len(agent_collections)} base(s) de conhecimento:
+{self._format_collections(agent_collections)}
+
+### 📚 Como Usar a Ferramenta de Busca
+
+**Função disponível:** `search(query: str, collection_name: str = None, limit: int = 5)`
+
+**Quando BUSCAR nas bases:**
+1. ✅ Perguntas sobre **especificações técnicas** (capacidades, dimensões, modelos)
+2. ✅ Solicitações de **procedimentos específicos** (como fazer manutenção, calibração)
+3. ✅ Dúvidas sobre **códigos de erro** ou diagnósticos
+4. ✅ Informações que exigem **precisão numérica** (pressões, temperaturas, torques)
+5. ✅ Referências a **manuais ou documentação** específica
+
+**Quando NÃO buscar:**
+1. ❌ Perguntas que você **já sabe responder** com conhecimento geral
+2. ❌ Conversação **casual ou esclarecimentos** simples
+3. ❌ Confirmações ou **perguntas de acompanhamento** sobre info já fornecida
+4. ❌ Saudações, agradecimentos, ou interações **não técnicas**
+
+### 💡 Exemplo de Uso
+
+**BOM uso de busca:**
+```python
+# Usuário: "Qual a pressão correta do sistema hidráulico?"
+search("pressão sistema hidráulico", limit=3)
+```
+
+**NÃO precisa buscar:**
+```python
+# Usuário: "Obrigado pela ajuda!"
+# Resposta direta: "Por nada! Estou aqui se precisar de mais alguma coisa."
+```
+
+### 🎯 Dicas para Buscas Eficientes
+
+1. **Use termos específicos**: "pressão hidráulico" > "informações gerais"
+2. **Limite resultados**: use limit=3 para evitar excesso de informação
+3. **Refine se necessário**: se primeira busca não trouxer resultados, tente termos diferentes
+
+---
+
+**IMPORTANTE:**
+- Busque nas bases **apenas quando realmente necessário**
+- Sempre **cite a fonte** quando usar informações das bases
+- Se não encontrar nas bases, responda com seu conhecimento geral
+- Não force buscas para perguntas que você já sabe responder
+"""
+
+        return base_instructions + rag_instructions
+
+    def _create_team_agent(self, team_id: int, leader_config: Dict, team_members: List[Dict], team_context: str, session_id: str = None) -> Team:
+        """Cria agente de time com contexto enriquecido usando modo de roteamento"""
+
+        # Criar instâncias dos membros com instruções RAG inteligentes
+        member_agents = []
+
+        for member in team_members:
+            # Buscar coleções do membro
+            member_collections = self.get_agent_collections(member['id'])
+
+            # Construir instruções com orientação RAG
+            enhanced_instructions = self._build_agent_instructions(member, member_collections)
+
+            # Atualizar configuração com instruções aprimoradas
+            member_copy = member.copy()
+            member_copy['instructions'] = enhanced_instructions
+
+            # Criar agente
+            agent_instance = self._get_or_create_agent(member['id'], member_copy)
+            member_agents.append(agent_instance)
+
+            logger.info(f"👤 MEMBRO CRIADO: {member['name']} com {len(member_collections)} coleções RAG")
+
+        # ✅ CACHE POR SESSION: Cada sessão precisa de seu próprio Team para manter memória
+        cache_key = session_id if session_id else f"team-{team_id}-default"
+
+        if cache_key in self.active_teams:
+            team_agent = self.active_teams[cache_key]
+            logger.info(f"♻️ REUTILIZANDO TEAM: {leader_config['name']} (session: {cache_key})")
+        else:
+            # Criar líder com contexto do time usando a classe Team em modo de roteamento
+            # IMPORTANTE: Manter instruções originais do líder (do banco) e adicionar contexto dinâmico
+            # O team_context adiciona informações de histórico e mapeamento de especialistas
+            leader_instructions = f"{leader_config.get('instructions', '')}\n\n{team_context}"
+
+            team_agent = Team(
+                name=leader_config['name'],
+                role=leader_config['role'],
+                members=member_agents,
+                model=OpenAIChat(
+                    id=leader_config.get('model', 'gpt-4o-mini'),
+                    temperature=leader_config.get('temperature', 0.7)
+                ),
+                instructions=leader_instructions,
+                markdown=True,
+                respond_directly=True,
+                stream=True,
+                # ✅ Configurações CRÍTICAS para manter contexto entre requests
+                db=self.agno_db,                         # Storage persistente
+                memory_manager=self.memory_manager,      # Gerenciador de memória
+                read_team_history=True,                  # Lê histórico da sessão
+                share_member_interactions=True,          # Membros veem mensagens uns dos outros
+                enable_session_summaries=True,           # Cria resumos automáticos
+                enable_agentic_memory=True,              # Gestão ativa de memórias
+                enable_user_memories=True                # Grava memórias de usuário
+            )
+
+            # Armazenar no cache POR SESSION
+            self.active_teams[cache_key] = team_agent
+            logger.info(f"👑 TEAM CRIADO: {leader_config['name']} coordenando {len(member_agents)} especialistas")
+            logger.info(f"🔑 CACHE KEY: {cache_key}")
+        logger.info(f"📊 MEMBERS REGISTRADOS: {[m.name for m in member_agents]}")
+        logger.info(f"🎯 SHOW_TOOL_CALLS: True (debug ativado)")
+
+        return team_agent
+
+    def _extract_agents_from_response(self, response, leader_config: Dict, team_members: List[Dict], delegated_agent_name: str = None) -> List[str]:
+        """Extrai nomes dos agentes que participaram da resposta
+
+        Args:
+            response: Resposta do agente (pode ser RunResponse ou RunContentEvent)
+            leader_config: Configuração do líder
+            team_members: Lista de membros do time
+            delegated_agent_name: Nome do agente delegado (string) extraído do tool_call transfer_task_to_member
+        """
+
+        agents = []
+        agents_from_messages = []
+
+        logger.info(f"🔍 INICIANDO EXTRAÇÃO DE AGENTES - Response type: {type(response).__name__}")
+        logger.info(f"🔍 Response tem 'messages': {hasattr(response, 'messages')}")
+        logger.info(f"🔍 Delegated agent_name recebido: {delegated_agent_name}")
+
+        # Verificar se houve delegação através das mensagens
+        if hasattr(response, 'messages') and response.messages:
+            logger.info(f"🔍 ANALISANDO {len(response.messages)} MENSAGENS PARA DETECTAR AGENTES...")
+
+            for idx, msg in enumerate(response.messages):
+                msg_role = getattr(msg, 'role', 'unknown')
+                msg_name = getattr(msg, 'name', None)
+                msg_content_preview = str(getattr(msg, 'content', ''))[:100] if hasattr(msg, 'content') else ''
+
+                logger.info(f"  MSG[{idx}]: role={msg_role}, name={msg_name}, content_preview={msg_content_preview[:50]}...")
+
+                # Se a mensagem tem um nome, é um agente específico
+                if msg_name:
+                    if msg_name not in agents_from_messages:
+                        agents_from_messages.append(msg_name)
+                        logger.info(f"    ✅ AGENTE DETECTADO NAS MENSAGENS: {msg_name}")
+        else:
+            logger.info(f"⚠️ Response NÃO TEM messages ou messages está vazio")
+
+        # PRIORIDADE 1: Se temos delegated_agent_name do tool_call, usar ele (mais confiável)
+        if delegated_agent_name:
+            agents.append(delegated_agent_name)
+            logger.info(f"✅ AGENTE DELEGADO (via tool_call agent_name): {delegated_agent_name}")
+        # PRIORIDADE 2: Se detectou agentes através das mensagens
+        elif agents_from_messages:
+            agents.extend(agents_from_messages)
+            logger.info(f"✅ AGENTES DETECTADOS NAS MENSAGENS: {agents_from_messages}")
+        # PRIORIDADE 3: Se não encontrou nenhum agente, adicionar o líder
+        else:
+            agents.append(leader_config['name'])
+            logger.info(f"  ℹ️ NENHUM AGENTE ESPECÍFICO DETECTADO - USANDO LÍDER")
+
+        logger.info(f"📊 AGENTES FINAIS DETECTADOS: {agents}")
+
+        return agents
+
+    def execute_team_task_with_context(self, team_id: int, task: str, context_history: List[Dict] = None, session_id: str = None) -> Dict:
+        """
+        Execução simplificada - deixa o Agno coordenar automaticamente
+
+        Args:
+            team_id: ID do time
+            task: Tarefa
+            context_history: Histórico (para construir contexto textual)
+            session_id: ID da sessão - CRÍTICO para manter memória do Team
+        """
+        start_time = time.time()
+        context_history = context_history or []
+
         try:
-            start_time = time.time()
             logger.info(f"🚀 [TIME-{team_id}] INICIANDO EXECUÇÃO DA TAREFA")
             logger.info(f"📋 [TIME-{team_id}] TAREFA: {task[:200]}...")
-            logger.info(f"📚 [TIME-{team_id}] CONTEXTO: {len(context_history) if context_history else 0} mensagens anteriores")
-            
+            logger.info(f"📚 [TIME-{team_id}] CONTEXTO: {len(context_history)} mensagens anteriores")
+
             # Buscar team e membros
             team = self.db.query(AgentTeam).filter(AgentTeam.id == team_id).first()
             if not team:
-                logger.error(f"❌ [TIME-{team_id}] ERRO: Team não encontrado")
-                raise ValueError(f"Team {team_id} não encontrado")
-            
-            logger.info(f"👑 [TIME-{team_id}] TEAM: {team.name} - Líder: {team.leader_agent_id}")
+                raise ValueError(f"Time {team_id} não encontrado")
 
+            # Buscar membros do time (EXCLUINDO o líder - ele será tratado separadamente)
             team_members_query = self.db.query(
                 TeamMember.agent_id,
                 AgentModel.name,
@@ -577,7 +1212,8 @@ Se o usuário NÃO especificar a máquina:
                 AgentModel.tools_config
             ).join(AgentModel, TeamMember.agent_id == AgentModel.id).filter(
                 TeamMember.team_id == team_id,
-                AgentModel.is_active == True
+                AgentModel.is_active == True,
+                TeamMember.agent_id != team.leader_agent_id  # ✅ EXCLUIR O LÍDER
             )
 
             team_members = []
@@ -593,22 +1229,18 @@ Se o usuário NÃO especificar a máquina:
                     'tools_config': result.tools_config or []
                 }
                 team_members.append(member_data)
-                logger.info(f"👤 [TIME-{team_id}] MEMBRO: {result.name} (ID: {result.agent_id}) - {result.role}")
 
             if not team_members:
-                logger.error(f"❌ [TIME-{team_id}] ERRO: Nenhum membro ativo encontrado")
-                raise ValueError(f"Nenhum membro ativo encontrado para o team {team_id}")
-            
-            logger.info(f"👥 [TIME-{team_id}] MEMBROS CARREGADOS: {len(team_members)} agentes")
+                raise ValueError(f"Nenhum membro ativo encontrado para o time {team_id}")
 
-            # Buscar líder separadamente (pode não estar nos membros)
+            # Buscar líder
             leader_config = None
             if team.leader_agent_id:
                 leader = self.db.query(AgentModel).filter(
                     AgentModel.id == team.leader_agent_id,
                     AgentModel.is_active == True
                 ).first()
-                
+
                 if leader:
                     leader_config = {
                         'id': leader.id,
@@ -620,294 +1252,352 @@ Se o usuário NÃO especificar a máquina:
                         'instructions': leader.instructions,
                         'tools_config': leader.tools_config or []
                     }
-                    logger.info(f"👑 [TIME-{team_id}] LÍDER CARREGADO: {leader.name} (ID: {leader.id}) - {leader.role}")
 
             if not leader_config:
-                logger.error(f"❌ [TIME-{team_id}] ERRO: Líder não encontrado ou inativo")
-                raise ValueError(f"Líder do team {team_id} não encontrado ou inativo")
+                raise ValueError(f"Líder do time {team_id} não encontrado ou inativo")
 
-            # Preparar contexto da conversa para o líder
-            context_text = ""
-            if context_history:
-                context_text = "\\n\\n--- HISTÓRICO DA CONVERSA ---\\n"
-                logger.info(f"📜 [TIME-{team_id}] PROCESSANDO HISTÓRICO DE {len(context_history)} mensagens:")
-                
-                for i, msg in enumerate(context_history):
-                    msg_type = msg.get('type', 'unknown')
-                    content = msg.get('content', '')
-                    timestamp = msg.get('timestamp', '')
-                    sender_info = msg.get('metadata', {}).get('sender', 'unknown')
-                    
-                    logger.info(f"   📝 [TIME-{team_id}] MSG {i+1}: [{msg_type.upper()}] {sender_info} -> {content[:100]}...")
-                    
-                    if msg_type == 'user':
-                        context_text += f"[USUÁRIO]: {content}\\n"
-                    elif msg_type == 'team':
-                        context_text += f"[EQUIPE]: {content}\\n"
-                    elif msg_type == 'agent':
-                        context_text += f"[AGENTE]: {content}\\n"
-                
-                context_text += "--- FIM DO HISTÓRICO ---\\n\\n"
-                logger.info(f"📜 [TIME-{team_id}] CONTEXTO PREPARADO: {len(context_text)} caracteres")
+            # Log para verificar estrutura
+            logger.info(f"🔍 [TIME-{team_id}] LEADER: {leader_config['name']} (ID: {leader_config['id']})")
+            logger.info(f"🔍 [TIME-{team_id}] MEMBERS: {[m['name'] for m in team_members]} (Total: {len(team_members)})")
+            logger.info(f"🔍 [TIME-{team_id}] LEADER ESTÁ EM MEMBERS? {leader_config['name'] in [m['name'] for m in team_members]}")
 
-            # Determinar estratégia de delegação baseada no time
-            delegation_strategy = self._determine_delegation_strategy(team, team_members, task)
-            logger.info(f"🎯 [TIME-{team_id}] ESTRATÉGIA DE DELEGAÇÃO: {delegation_strategy}")
+            # Construir contexto enriquecido
+            team_context = self._build_team_context(
+                team=team,
+                leader=leader_config,
+                members=team_members,
+                task=task,
+                history=context_history
+            )
 
-            # Executar com base na estratégia
-            if delegation_strategy == "specific_model_matching":
-                return self._execute_with_model_matching(team_id, team, team_members, leader_config, task, context_text, context_history, start_time)
+            logger.info(f"📏 [TIME-{team_id}] CONTEXTO GERADO: {len(team_context)} caracteres")
+            logger.info(f"👥 [TIME-{team_id}] MEMBROS: {[m['name'] for m in team_members]}")
+
+            # ✅ EXECUÇÃO DIRETA - AGNO DECIDE TUDO
+            # Passar session_id para cache correto
+            team_agent = self._create_team_agent(
+                team_id=team_id,
+                leader_config=leader_config,
+                team_members=team_members,
+                team_context=team_context,
+                session_id=session_id
+            )
+
+            logger.info(f"🎯 [TIME-{team_id}] EXECUTANDO TIME COM AGNO...")
+            logger.info(f"💾 [TIME-{team_id}] SESSION_ID: {session_id}")
+
+            # ✅ Executar com session_id, user_id e flags de histórico
+            if session_id:
+                response = team_agent.run(
+                    task,
+                    session_id=session_id,
+                    user_id=None,  # Pode adicionar user_id se necessário
+                    add_history_to_context=True,  # Inclui histórico no prompt
+                    num_history_runs=6  # Últimas 6 interações
+                )
             else:
-                return self._execute_with_flexible_delegation(team_id, team, team_members, leader_config, task, context_text, context_history, start_time)
+                logger.warning(f"⚠️ [TIME-{team_id}] SESSION_ID NÃO FORNECIDO - contexto não será mantido!")
+                response = team_agent.run(task)
+
+            logger.info(f"🔍 [TIME-{team_id}] RESPONSE TYPE: {type(response)}")
+            logger.info(f"🔍 [TIME-{team_id}] RESPONSE: {str(response)[:200]}...")
+
+            # Processar resposta do Team
+            response_content = ""
+            final_response = response  # Para extrair agentes depois
+
+            # Team retorna um objeto RunResponse com content
+            if hasattr(response, 'content'):
+                response_content = response.content if response.content else ""
+            # Se for generator/iterable
+            elif hasattr(response, '__iter__'):
+                # Coletar todos os eventos primeiro
+                all_events = list(response)
+
+                logger.info(f"🔍 [TIME-{team_id}] TOTAL DE EVENTOS COLETADOS: {len(all_events)}")
+
+                # Detectar se houve delegação (2 requests HTTP)
+                # Se houver RunResponse no meio, significa que houve delegação
+                run_response_indices = []
+
+                # Log resumido - contagem de eventos e detecção de delegação
+                event_types_count = {}
+                delegation_detected = False
+                delegation_started_idx = None  # ✅ Novo: rastrear onde começou a delegação
+                delegation_completed_idx = None
+                delegated_to_agent = None
+                toolcall_completed_indices = []
+                rag_used = False  # Flag para indicar se RAG foi usado
+
+                for idx, event in enumerate(all_events):
+                    event_type = type(event).__name__
+                    event_types_count[event_type] = event_types_count.get(event_type, 0) + 1
+
+                    # Detectar RunResponse
+                    if 'RunResponse' in event_type:
+                        run_response_indices.append(idx)
+
+                    # Detectar delegação via ToolCallStartedEvent
+                    if 'ToolCallStartedEvent' in event_type:
+                        # Extrair tool_name do objeto ToolExecution
+                        tool_name = None
+                        if hasattr(event, 'tool') and event.tool:
+                            # event.tool é um ToolExecution object
+                            tool_name = getattr(event.tool, 'tool_name', None)
+
+                        logger.info(f"🔧 [TIME-{team_id}] ToolCallStarted no índice {idx} - tool: '{tool_name}'")
+
+                        # Detectar RAG search
+                        if tool_name and 'search' in tool_name.lower():
+                            rag_used = True
+
+                        # Detectar delegação (transfer_task_to_member ou delegate_task_to_member)
+                        # Aceitar ambos os nomes para compatibilidade (LLM pode usar qualquer um)
+                        if tool_name and ('transfer' in tool_name.lower() or 'delegate' in tool_name.lower()):
+                            delegation_detected = True
+                            delegation_started_idx = idx  # ✅ Marcar início da delegação
+                            # Extrair argumentos da delegação
+                            tool_args = {}
+                            if hasattr(event, 'tool') and hasattr(event.tool, 'tool_args'):
+                                tool_args = event.tool.tool_args
+                                # Tentar extrair agent_name (prioridade) ou member (fallback para delegate_task_to_member)
+                                if isinstance(tool_args, dict):
+                                    delegated_to_agent = tool_args.get('agent_name') or tool_args.get('member') or tool_args.get('member_id')
+                                else:
+                                    delegated_to_agent = None
+
+                            # LOG COMPLETO DA TOOL CALL
+                            logger.info(f"🎯 [TIME-{team_id}] DELEGAÇÃO DETECTADA no índice {idx}")
+                            logger.info(f"🔍 [TOOL CALL COMPLETO]")
+                            logger.info(f"   - tool_name: {tool_name}")
+                            logger.info(f"   - tool_args type: {type(tool_args)}")
+                            if isinstance(tool_args, dict):
+                                import json
+                                logger.info(f"   - tool_args JSON: {json.dumps(tool_args, indent=4, default=str)}")
+                            else:
+                                logger.info(f"   - tool_args raw: {tool_args}")
+                            logger.info(f"   - agent_name extraído: {delegated_to_agent}")
+
+                            # Verificar campos
+                            if isinstance(tool_args, dict):
+                                logger.info(f"   - Todos os campos: {list(tool_args.keys())}")
+                                if 'task_description' in tool_args:
+                                    task_desc = tool_args.get('task_description', '')
+                                    logger.info(f"   - task_description: {task_desc[:100]}...")
+                                if 'expected_output' in tool_args:
+                                    expected = tool_args.get('expected_output', '')
+                                    logger.info(f"   - expected_output: {expected[:100]}...")
+
+                    # Coletar todos os índices de ToolCallCompletedEvent
+                    if 'ToolCallCompletedEvent' in event_type:
+                        toolcall_completed_indices.append(idx)
+
+                # Se houve delegação, pegar o ÚLTIMO ToolCallCompletedEvent
+                if delegation_detected and toolcall_completed_indices:
+                    delegation_completed_idx = toolcall_completed_indices[-1]
+                    logger.info(f"✅ [TIME-{team_id}] Delegação: início={delegation_started_idx}, fim={delegation_completed_idx}")
+
+                # Log resumido
+                logger.info(f"📊 [TIME-{team_id}] Eventos: {event_types_count}")
+                if delegation_detected:
+                    logger.info(f"🎯 [TIME-{team_id}] Delegado para: {delegated_to_agent}")
+
+                # Se houve delegação, pegar APENAS o último RunResponse (resposta consolidada)
+                # Isso evita processar 500+ eventos intermediários
+                response_content = ""
+                final_response = None
+
+                if run_response_indices:
+                    final_response = all_events[run_response_indices[-1]]
+                    logger.info(f"📦 [TIME-{team_id}] Usando RunResponse final (índice {run_response_indices[-1]})")
+
+                    # Extrair conteúdo do RunResponse final
+                    if hasattr(final_response, 'content') and final_response.content:
+                        response_content = str(final_response.content)
+                    elif hasattr(final_response, 'messages') and final_response.messages:
+                        # Se não tem content, tentar messages
+                        for msg in final_response.messages:
+                            if hasattr(msg, 'content') and msg.content and hasattr(msg, 'role') and msg.role == 'assistant':
+                                response_content += str(msg.content)
+                else:
+                    # Fallback: quando não há RunResponse, pegar eventos da resposta do especialista
+                    logger.info(f"⚠️ [TIME-{team_id}] Sem RunResponse - usando eventos da delegação")
+
+                    # ✅ NOVA LÓGICA: Quando há delegação, a resposta está nos RunContentEvent
+                    # que vêm ENTRE ToolCallStarted e ToolCallCompleted
+                    if delegation_detected and delegation_started_idx is not None and delegation_completed_idx is not None:
+                        logger.info(f"🔍 [TIME-{team_id}] DELEGAÇÃO detectada - coletando RunContentEvent ENTRE delegação")
+                        logger.info(f"🔍 [TIME-{team_id}] Range: índice {delegation_started_idx + 1} até {delegation_completed_idx}")
+
+                        # Pegar RunContentEvent que vêm ENTRE ToolCallStarted e ToolCallCompleted
+                        # (são os fragmentos da resposta do especialista)
+                        all_fragments = []
+
+                        for idx in range(delegation_started_idx + 1, delegation_completed_idx):
+                            chunk = all_events[idx]
+                            event_type = type(chunk).__name__
+
+                            # Coletar apenas RunContentEvent
+                            if 'RunContentEvent' in event_type and hasattr(chunk, 'content') and chunk.content:
+                                content = str(chunk.content)
+                                if content:
+                                    # Evitar duplicatas consecutivas
+                                    if not all_fragments or all_fragments[-1] != content:
+                                        all_fragments.append(content)
+
+                        logger.info(f"🔍 [TIME-{team_id}] Total de fragmentos coletados: {len(all_fragments)}")
+
+                        if all_fragments:
+                            # Log dos tamanhos para detectar se são incrementais ou acumulados
+                            if len(all_fragments) > 6:
+                                logger.info(f"🔍 [TIME-{team_id}] Primeiros fragmentos: {[len(f) for f in all_fragments[:3]]}")
+                                logger.info(f"🔍 [TIME-{team_id}] Últimos fragmentos: {[len(f) for f in all_fragments[-3:]]}")
+                                logger.info(f"🔍 [TIME-{team_id}] Maior fragmento: {max(len(f) for f in all_fragments)} chars")
+
+                            # DETECTAR se fragmentos são incrementais ou acumulados
+                            # Se os fragmentos são muito pequenos (< 50 chars em média), são incrementais
+                            avg_size = sum(len(f) for f in all_fragments) / len(all_fragments)
+                            max_size = max(len(f) for f in all_fragments)
+
+                            logger.info(f"🔍 [TIME-{team_id}] Tamanho médio dos fragmentos: {avg_size:.1f} chars")
+                            logger.info(f"🔍 [TIME-{team_id}] Tamanho máximo: {max_size} chars")
+
+                            # Se tamanho médio é pequeno (< 20 chars), são incrementais
+                            if avg_size < 20:
+                                # INCREMENTAIS: concatenar todos
+                                response_content = ''.join(all_fragments)
+                                logger.info(f"✅ [TIME-{team_id}] Fragmentos INCREMENTAIS detectados - CONCATENANDO todos")
+                                logger.info(f"   Total: {len(response_content)} chars de {len(all_fragments)} fragmentos")
+                            else:
+                                # ACUMULADOS: usar o maior
+                                largest_fragment = max(all_fragments, key=len)
+                                response_content = largest_fragment
+                                logger.info(f"✅ [TIME-{team_id}] Fragmentos ACUMULADOS detectados - usando MAIOR")
+                                logger.info(f"   Maior: {len(response_content)} chars de {len(all_fragments)} fragmentos")
+                        else:
+                            response_content = ""
+                            logger.warning(f"⚠️ [TIME-{team_id}] Nenhum fragmento RunContentEvent encontrado entre delegação!")
+                    else:
+                        # SEM delegação (coordenador): pegar fragmentos incrementais
+                        logger.info(f"🔍 [TIME-{team_id}] SEM delegação - coletando fragmentos incrementais")
+
+                        all_fragments = []
+                        for idx, chunk in enumerate(all_events):
+                            if hasattr(chunk, 'content') and chunk.content:
+                                content = str(chunk.content)
+                                if content:
+                                    all_fragments.append(content)
+
+                        logger.info(f"🔍 [TIME-{team_id}] Total de fragmentos coletados: {len(all_fragments)}")
+
+                        if all_fragments:
+                            # Coordenador: conteúdo incremental (cada evento adiciona um pedaço)
+                            response_content = ''.join(all_fragments)
+                            logger.info(f"✅ [TIME-{team_id}] Concatenados {len(all_fragments)} fragmentos = {len(response_content)} chars")
+                        else:
+                            response_content = ""
+                            logger.warning(f"⚠️ [TIME-{team_id}] Nenhum fragmento encontrado!")
+
+                    logger.info(f"✅ [TIME-{team_id}] Resposta extraída: {len(response_content)} chars")
+
+                response_content = response_content.strip()
+                logger.info(f"📏 [TIME-{team_id}] Tamanho da resposta: {len(response_content)} caracteres")
+
+                # Garantir que final_response existe para extração de agentes
+                if final_response is None and all_events:
+                    final_response = all_events[-1]
+            # Fallback
+            else:
+                response_content = str(response) if response else ""
+
+            # Se ainda estiver vazio, tentar pegar das messages
+            if not response_content and hasattr(final_response, 'messages') and final_response.messages:
+                for msg in final_response.messages:
+                    if hasattr(msg, 'content') and msg.content:
+                        response_content += str(msg.content)
+
+            execution_time = int((time.time() - start_time) * 1000)
+
+            # Extrair agentes envolvidos - passar delegated_agent_name (string do tool_call) se houver
+            agents_involved = self._extract_agents_from_response(
+                final_response,
+                leader_config,
+                team_members,
+                delegated_agent_name=delegated_to_agent if delegation_detected else None
+            )
+
+            # Extrair tokens do response (se disponível)
+            tokens_info = {
+                'input': 0,
+                'output': 0,
+                'total': 0
+            }
+
+            if hasattr(final_response, 'metrics') and final_response.metrics:
+                metrics = final_response.metrics
+                if hasattr(metrics, 'input_tokens'):
+                    tokens_info['input'] = metrics.input_tokens
+                if hasattr(metrics, 'output_tokens'):
+                    tokens_info['output'] = metrics.output_tokens
+                if hasattr(metrics, 'total_tokens'):
+                    tokens_info['total'] = metrics.total_tokens
+                else:
+                    tokens_info['total'] = tokens_info['input'] + tokens_info['output']
+
+            logger.info(f"✅ [TIME-{team_id}] EXECUÇÃO CONCLUÍDA: {execution_time}ms")
+            logger.info(f"👥 [TIME-{team_id}] AGENTES ENVOLVIDOS: {agents_involved}")
+            logger.info(f"🔢 [TIME-{team_id}] TOKENS: {tokens_info['total']} (in: {tokens_info['input']}, out: {tokens_info['output']})")
+
+            return {
+                'success': True,
+                'team_response': response_content,
+                'agents_involved': agents_involved,
+                'execution_time_ms': execution_time,
+                'tool_calls': len(response.messages) if hasattr(response, 'messages') else 0,
+                'tokens': tokens_info,
+                'rag_used': rag_used,
+                'timestamp': datetime.now().isoformat()
+            }
 
         except Exception as e:
             execution_time = int((time.time() - start_time) * 1000)
-            
+
             logger.error(f"💥 [TIME-{team_id}] ERRO NA EXECUÇÃO: {str(e)}")
             logger.error(f"⏱️ [TIME-{team_id}] TEMPO ATÉ ERRO: {execution_time}ms")
-            
-            error_agents = [m.get('name') for m in team_members] if 'team_members' in locals() else []
-            logger.error(f"👥 [TIME-{team_id}] AGENTES DISPONÍVEIS NO MOMENTO DO ERRO: {error_agents}")
 
             return {
-                "task": task,
-                "error": str(e),
-                "agents_involved": error_agents,
-                "execution_time_ms": execution_time,
-                "success": False,
-                "timestamp": datetime.now().isoformat()
+                'success': False,
+                'error': str(e),
+                'execution_time_ms': execution_time,
+                'timestamp': datetime.now().isoformat()
             }
 
-    def _determine_delegation_strategy(self, team, team_members: List[Dict], task: str) -> str:
-        """
-        Determina qual estratégia de delegação usar baseada no time e contexto
-        """
-        # Verificar se algum membro tem padrão específico de máquinas agrícolas no nome
-        machine_patterns = ['CH570', 'CH670', 'A9000', 'A8000', 'A8800', 'A8810', 'A9900', 'CH950', 'TC', 'Plantio']
-        
-        for member in team_members:
-            member_name = member.get('name', '')
-            if any(pattern in member_name for pattern in machine_patterns):
-                logger.info(f"🔧 [TEAM] DETECTADO TIME COM ESPECIALISTAS EM MÁQUINAS: {member_name}")
-                return "specific_model_matching"
-        
-        # Estratégia flexível para todos os outros casos
-        logger.info(f"🌟 [TEAM] USANDO ESTRATÉGIA FLEXÍVEL PARA TIME: {team.name}")
-        return "flexible_delegation"
 
-    def _execute_with_model_matching(self, team_id: int, team, team_members: List[Dict], 
-                                   leader_config: Dict, task: str, context_text: str,
-                                   context_history: List[Dict], start_time: float) -> Dict:
-        """
-        Execução com estratégia específica para máquinas agrícolas (lógica original)
-        """
-        logger.info(f"🚜 [TIME-{team_id}] EXECUTANDO COM ESTRATÉGIA ESPECÍFICA DE MÁQUINAS")
-        
-        # Criar mapeamento de modelos específicos
-        model_mapping = {}
-        for member_config in team_members:
-            member_name = member_config.get('name', '')
-            if 'CH570' in member_name or 'CH670' in member_name:
-                model_mapping['CH570'] = member_name
-                model_mapping['CH670'] = member_name
-            elif 'A9000' in member_name:
-                model_mapping['A9000'] = member_name
-            elif 'A8000' in member_name or 'A8800' in member_name:
-                model_mapping['A8000'] = member_name
-                model_mapping['A8800'] = member_name
-            elif 'CH950' in member_name:
-                model_mapping['CH950'] = member_name
-            elif 'TC' in member_name:
-                model_mapping['TC'] = member_name
-            elif 'Plantio' in member_name or 'plantio' in member_name:
-                model_mapping['Plantio'] = member_name
-
-        # Verificar se deve delegar baseado no contexto
-        should_delegate = False
-        target_specialist = None
-        
-        # Verificar se a pergunta atual ou contexto menciona modelo específico
-        # IMPORTANTE: Incluir apenas mensagens do usuário para evitar detectar modelos nas próprias respostas
-        combined_text = task.lower()
-        if context_history:
-            for msg in context_history[-3:]:  # Últimas 3 mensagens para contexto
-                if msg.get('type', '') == 'user':  # Apenas mensagens do usuário
-                    combined_text += " " + msg.get('content', '').lower()
-        
-        # Buscar por modelos específicos no texto (ordenado por especificidade)
-        logger.info(f"🔍 [TIME-{team_id}] ANALISANDO PARA DELEGAÇÃO: '{combined_text[:200]}...'")
-        
-        # Ordenar por tamanho decrescente para priorizar matches mais específicos
-        sorted_models = sorted(model_mapping.items(), key=lambda x: len(x[0]), reverse=True)
-        logger.info(f"🗺️ [TIME-{team_id}] ORDEM DE TESTE: {[k for k, v in sorted_models]}")
-        
-        for model_key, specialist_name in sorted_models:
-            # Fazer match mais preciso com word boundaries
-            pattern = r'\b' + re.escape(model_key.lower()) + r'\b'
-            match_result = re.search(pattern, combined_text.lower())
-            if match_result:
-                should_delegate = True
-                target_specialist = next((m for m in team_members if m['name'] == specialist_name), None)
-                logger.info(f"✅ [TIME-{team_id}] MODELO DETECTADO: {model_key} -> DELEGANDO PARA: {specialist_name}")
-                logger.info(f"🔎 [TIME-{team_id}] MATCH ENCONTRADO: '{match_result.group()}' na posição {match_result.start()}-{match_result.end()}")
-                logger.info(f"📝 [TIME-{team_id}] CONTEXTO DO MATCH: '...{combined_text[max(0, match_result.start()-10):match_result.end()+10]}...'")
-                break
-            else:
-                logger.info(f"❌ [TIME-{team_id}] MODELO {model_key} NÃO ENCONTRADO (pattern: '{pattern}')")
-
-        if should_delegate and target_specialist:
-            return self._execute_specialist_directly(team_id, target_specialist, task, context_text, start_time, leader_config)
-        else:
-            # Líder responde com contexto de triagem específica
-            leader_context = f"""
-            {context_text}
-            Você é o líder de uma equipe de especialistas em máquinas agrícolas. 
-            
-            Para esta tarefa: "{task}"
-            
-            Especialistas disponíveis: {', '.join(model_mapping.keys()) if model_mapping else 'Nenhum'}
-            
-            Se não conseguir identificar a máquina específica, pergunte qual modelo o usuário está usando.
-            Se conseguir identificar, explique que você está encaminhando para o especialista apropriado.
-            """
-            return self._execute_leader_response(team_id, leader_config, leader_context, task, start_time)
-
-    def _execute_with_flexible_delegation(self, team_id: int, team, team_members: List[Dict],
-                                        leader_config: Dict, task: str, context_text: str,
-                                        context_history: List[Dict], start_time: float) -> Dict:
-        """
-        Execução flexível que permite diferentes estratégias de delegação
-        """
-        logger.info(f"🌟 [TIME-{team_id}] EXECUTANDO COM ESTRATÉGIA FLEXÍVEL")
-        
-        # Encontrar o melhor agente baseado na tarefa e competências
-        best_agent = self._find_best_agent_for_task(team_members, task, context_text)
-        
-        if best_agent:
-            logger.info(f"🎯 [TIME-{team_id}] MELHOR AGENTE ENCONTRADO: {best_agent['name']} - {best_agent['role']}")
-            return self._execute_specialist_directly(team_id, best_agent, task, context_text, start_time, leader_config)
-        else:
-            # Líder coordena colaborativamente
-            leader_context = f"""
-            {context_text}
-            
-            Você é o líder desta equipe. Para a tarefa: "{task}"
-            
-            Membros disponíveis:
-            {chr(10).join([f"- {m.get('name')}: {m.get('role', 'Assistente')} - {m.get('description', 'Sem descrição')[:100]}" for m in team_members])}
-            
-            Analise a tarefa e:
-            1. Se algum membro específico seria ideal, mencione que está delegando para ele
-            2. Se for uma questão geral, responda diretamente usando sua expertise de liderança
-            3. Se precisar de informações específicas, coordene a resposta baseada nas competências da equipe
-            
-            Sua função é coordenar e fornecer a melhor resposta possível.
-            """
-            return self._execute_leader_response(team_id, leader_config, leader_context, task, start_time)
-
-    def _find_best_agent_for_task(self, team_members: List[Dict], task: str, context: str) -> Optional[Dict]:
-        """
-        Encontra o melhor agente para uma tarefa específica baseado em competências
-        """
-        task_lower = task.lower()
-        
-        # Pontuação por agente baseada na relevância
-        agent_scores = []
-        
-        for agent in team_members:
-            score = 0
-            
-            # Pontuação baseada na descrição/especialidade
-            description = agent.get('description', '').lower()
-            instructions = agent.get('instructions', '').lower()
-            role = agent.get('role', '').lower()
-            
-            # Verificar correspondências nas instruções e descrições
-            combined_agent_info = f"{description} {instructions} {role}"
-            
-            # Palavras-chave da tarefa presentes na descrição do agente
-            task_words = set(task_lower.split())
-            agent_words = set(combined_agent_info.split())
-            common_words = task_words.intersection(agent_words)
-            score += len(common_words) * 2
-            
-            # Pontuação extra se o agente tem coleções RAG associadas
-            agent_collections = self.get_agent_collections(agent.get('id', 0))
-            if agent_collections:
-                score += len(agent_collections) * 3
-            
-            if score > 0:
-                agent_scores.append((agent, score))
-                logger.info(f"📊 [AGENT-MATCH] {agent['name']}: score {score} (palavras comuns: {len(common_words)}, coleções: {len(agent_collections)})")
-        
-        # Retornar o agente com maior pontuação, se houver uma diferença significativa
-        if agent_scores:
-            agent_scores.sort(key=lambda x: x[1], reverse=True)
-            best_agent, best_score = agent_scores[0]
-            
-            # Só delegar se o score for significativo (> 3) e melhor que os outros
-            if best_score >= 3:
-                if len(agent_scores) == 1 or best_score > agent_scores[1][1] * 1.5:
-                    return best_agent
-        
-        return None
-
-    def _execute_specialist_directly(self, team_id: int, specialist: Dict, task: str, 
+    def _execute_specialist_directly(self, team_id: int, specialist: Dict, task: str,
                                    context_text: str, start_time: float, leader_config: Dict) -> Dict:
         """
-        Executa um especialista específico diretamente
+        Executa um especialista específico diretamente (sem RAG automático)
+        O especialista decide se e quando buscar nas bases de conhecimento
         """
         logger.info(f"👨‍🔧 [TIME-{team_id}] EXECUTANDO ESPECIALISTA: {specialist['name']}")
-        
-        # BUSCA RAG AUTOMÁTICA ANTES DA EXECUÇÃO
-        rag_context = ""
-        agent_id = specialist['id']
-        
-        # Buscar coleções RAG do agente especialista
-        agent_collections = self.get_agent_collections(agent_id)
-        if agent_collections:
-            logger.info(f"🔍 [TIME-{team_id}] FAZENDO BUSCA RAG AUTOMÁTICA PARA ESPECIALISTA...")
-            collection_names = [col['name'] for col in agent_collections]
-            logger.info(f"📚 [TIME-{team_id}] COLEÇÕES DISPONÍVEIS: {collection_names}")
-            
-            # Criar instância RAG temporária para busca
-            temp_rag = QdrantRAGTool(self.qdrant_service, collection_names, self.db)
-            
-            try:
-                # Fazer busca automática com termos da tarefa
-                initial_results = temp_rag.search(task, limit=5)
-                if initial_results and not any('error' in str(r) for r in initial_results):
-                    logger.info(f"✅ [TIME-{team_id}] BUSCA RAG CONCLUÍDA: {len(initial_results)} resultados")
-                    rag_context = "\n\n🗄️ INFORMAÇÕES DAS BASES DE CONHECIMENTO:\n"
-                    for i, result in enumerate(initial_results[:3]):
-                        content = result.get('text', result.get('content', ''))
-                        rag_context += f"{i+1}. {content[:500]}...\n\n"
-                    rag_context += "📋 Use essas informações como base para sua resposta.\n"
-                else:
-                    logger.warning(f"⚠️ [TIME-{team_id}] BUSCA RAG SEM RESULTADOS VÁLIDOS")
-            except Exception as e:
-                logger.error(f"❌ [TIME-{team_id}] ERRO NA BUSCA RAG: {e}")
-        else:
-            logger.info(f"ℹ️ [TIME-{team_id}] ESPECIALISTA SEM COLEÇÕES RAG ASSOCIADAS")
 
+        # Contexto simplificado - sem RAG forçado
         specialist_context = f"""
         {context_text}
-        
+
         Você é {specialist['name']} - {specialist.get('role', 'Especialista')}.
-        
+
         Tarefa: {task}
-        
-        {rag_context}
-        
+
         Forneça uma resposta técnica detalhada baseada na sua especialidade e conhecimento.
+        Se necessário, use a ferramenta de busca disponível para consultar as bases de conhecimento.
         """
-        
+
         specialist_agent = self._get_or_create_agent(specialist['id'], specialist)
         response = specialist_agent.run(specialist_context)
 
         # Processar resposta - verificar se é generator (streaming)
         if hasattr(response, '__iter__') and not hasattr(response, 'content'):
-            # É um generator - processar para obter resposta completa
             full_response = ""
             for chunk in response:
                 if hasattr(chunk, 'content'):
@@ -917,22 +1607,23 @@ Se o usuário NÃO especificar a máquina:
             response_content = full_response
         else:
             response_content = response.content if hasattr(response, 'content') else str(response)
+
         execution_time = int((time.time() - start_time) * 1000)
-        
+
+        # Detectar uso de RAG através dos tool calls
+        rag_used = False
+        tool_calls_count = 0
+        if hasattr(response, 'messages'):
+            for msg in response.messages:
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    tool_calls_count += len(msg.tool_calls)
+                    for tc in msg.tool_calls:
+                        if hasattr(tc, 'function') and 'search' in str(tc.function.name):
+                            rag_used = True
+
         logger.info(f"✅ [TIME-{team_id}] ESPECIALISTA RESPONDEU: {len(response_content)} caracteres")
-        
-        # Capturar informações de RAG para resposta
-        rag_info = {"rag_used": False, "searches": []}
-        if rag_context:
-            rag_info = {
-                "rag_used": True,
-                "searches": [{"query": task[:100], "results_count": len(initial_results) if 'initial_results' in locals() else 0}],
-                "total_searches": 1,
-                "total_results": len(initial_results) if 'initial_results' in locals() else 0,
-                "collections_searched": collection_names if 'collection_names' in locals() else []
-            }
-            logger.info(f"🗄️ [TIME-{team_id}] RAG USADO: {rag_info['total_results']} resultados de {len(rag_info['collections_searched'])} coleções")
-        
+        logger.info(f"🔧 [TIME-{team_id}] TOOL CALLS: {tool_calls_count} | RAG USADO: {rag_used}")
+
         return {
             "task": task,
             "team_response": response_content,
@@ -941,7 +1632,10 @@ Se o usuário NÃO especificar a máquina:
             "success": True,
             "timestamp": datetime.now().isoformat(),
             "delegation_type": "specialist_direct",
-            "rag_info": rag_info
+            "rag_info": {
+                "rag_used": rag_used,
+                "tool_calls": tool_calls_count
+            }
         }
 
     def _execute_leader_response(self, team_id: int, leader_config: Dict, leader_context: str, task: str, start_time: float) -> Dict:
@@ -1015,6 +1709,9 @@ Se o usuário NÃO especificar a máquina:
         
         # Criar agente Agno
         agent = Agent(
+            name=agent_config.get('name', f'Agent-{agent_id}'),
+            role=agent_config.get('role', 'Assistant'),
+            id=f"agent-{agent_id}",  # ID único para delegação
             model=OpenAIChat(
                 id=agent_config.get('model', 'gpt-4o-mini'),
                 temperature=agent_config.get('temperature', 0.7)

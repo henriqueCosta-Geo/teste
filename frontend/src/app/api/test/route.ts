@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
         data: {
           name: 'Empresa Demo',
           slug: 'demo',
-          metadata_file: '/config/demo.toml',
+          metadata_file: null, // Sem arquivo TOML por padrão
           is_active: true
         }
       })

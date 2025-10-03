@@ -125,23 +125,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Criar diretório de metadados se não existir
-    const metadataDir = join(process.cwd(), 'config', 'customers')
-    await mkdir(metadataDir, { recursive: true })
-
-    // Caminho do arquivo TOML
-    const tomlPath = join(metadataDir, `${slug}.toml`)
-    const relativePath = `config/customers/${slug}.toml`
-
-    // Salvar arquivo TOML
-    await writeFile(tomlPath, metadata_toml, 'utf-8')
-
-    // Criar customer no banco
+    // Criar customer no banco com TOML armazenado diretamente
     const customer = await prisma.customers.create({
       data: {
         name,
         slug,
-        metadata_file: relativePath,
+        metadata_toml: metadata_toml, // Salvar TOML diretamente no banco
         is_active: true
       }
     })

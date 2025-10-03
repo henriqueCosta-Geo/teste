@@ -43,7 +43,7 @@ export default function CustomerUsersPage() {
     email: '',
     username: '',
     password: '',
-    role: 'REGULAR'
+    role: 'USER'
   })
 
   useEffect(() => {
@@ -92,7 +92,7 @@ export default function CustomerUsersPage() {
         throw new Error(error.error || 'Erro ao criar usuário')
       }
 
-      setNewUser({ name: '', email: '', username: '', password: '', role: 'REGULAR' })
+      setNewUser({ name: '', email: '', username: '', password: '', role: 'USER' })
       setShowCreateForm(false)
       await loadUsers()
       alert('Usuário criado com sucesso!')
@@ -130,11 +130,12 @@ export default function CustomerUsersPage() {
     const styles = {
       SUPER_USER: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
       ADMIN: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      USER: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
       REGULAR: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
     }
 
     return (
-      <span className={`px-2 py-1 rounded text-xs font-medium ${styles[role as keyof typeof styles] || styles.REGULAR}`}>
+      <span className={`px-2 py-1 rounded text-xs font-medium ${styles[role as keyof typeof styles] || 'bg-gray-100 text-gray-700'}`}>
         {role}
       </span>
     )
@@ -257,7 +258,7 @@ export default function CustomerUsersPage() {
                   onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
                   className="input"
                 >
-                  <option value="REGULAR">Regular User</option>
+                  <option value="USER">Regular User</option>
                   <option value="ADMIN">Admin</option>
                 </select>
               </div>

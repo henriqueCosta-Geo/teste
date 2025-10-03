@@ -98,7 +98,7 @@ async function proxyRequest(
         method,
         headers,
         body,
-        signal: AbortSignal.timeout(30000), // 30 segundos timeout para streaming
+        signal: AbortSignal.timeout(120000), // 120 segundos (2 minutos) timeout para streaming
       })
 
       console.log(`Success: ${response.status} ${response.statusText}`)

@@ -166,7 +166,13 @@ export default function TeamChatPage() {
       let agentName = 'Time'
 
       // Usar streaming
-      await teamsAPI.executeStream(teamId, userMessage.content.trim(), sessionId, (chunk) => {
+      const response = teamsAPI.executeStream(teamId, {
+        task: userMessage.content.trim(),
+        session_id: sessionId,
+        stream: true
+      })
+
+      for await (const chunk of response) {
         console.log('Chunk recebido:', chunk)
 
         if (chunk.type === 'start') {
@@ -174,9 +180,9 @@ export default function TeamChatPage() {
         } else if (chunk.type === 'progress') {
           setStreamingMessage(chunk.message || '')
         } else if (chunk.type === 'content') {
-          // Chunk de conteúdo - mostrar progressivamente
+          // Chunk de conteúdo - ACUMULAR caracteres (não substituir!)
           if (chunk.content) {
-            finalResponse = chunk.content  // O backend já envia o texto completo progressivo
+            finalResponse += chunk.content  // ✅ ACUMULAR ao invés de substituir
             setStreamingMessage(finalResponse)
           }
           if (chunk.agent_name) {
@@ -212,7 +218,7 @@ export default function TeamChatPage() {
 
           setMessages(prev => [...prev, errorMessage])
         }
-      })
+      }
 
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error)
@@ -278,67 +284,6 @@ export default function TeamChatPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.back()}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ArrowLeft size={20} />
-            </button>
-            
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <Users className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <h1 className="text-lg font-semibold text-gray-900">{team.name}</h1>
-                <p className="text-sm text-gray-600">
-                  {team.members.length} membros
-                  {team.leader && (
-                    <span className="ml-2">
-                      • Líder: {team.leader.name}
-                    </span>
-                  )}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="text-right">
-            <div className="text-sm text-gray-500 mb-1">
-              Sessão: {sessionId.substring(0, 16)}...
-            </div>
-            <div className="flex items-center gap-1 text-xs text-gray-400">
-              <Users size={12} />
-              <span>Chat colaborativo</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Team Members */}
-        {team.members.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
-            <div className="flex flex-wrap gap-2">
-              {team.members.map((member) => (
-                <div
-                  key={member.agent_id}
-                  className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs text-gray-700"
-                >
-                  {team.leader_agent_id === member.agent_id && (
-                    <Crown size={10} className="text-yellow-500" />
-                  )}
-                  <span>{member.agent.name}</span>
-                  <span className="text-gray-500">({member.agent.role})</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 bg-gray-50">
         <div className="max-w-4xl mx-auto space-y-4">
@@ -346,17 +291,11 @@ export default function TeamChatPage() {
             <div className="text-center py-8">
               <Users size={48} className="mx-auto text-gray-300 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Inicie uma conversa colaborativa
+                Inicie uma conversa
               </h3>
               <p className="text-gray-600">
-                Faça uma pergunta ou solicite uma tarefa para o time {team.name}
+                Digite sua mensagem abaixo para começar
               </p>
-              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-700">
-                  💡 <strong>Dica:</strong> O time trabalhará em conjunto para responder sua pergunta.
-                  {team.leader && ` O líder ${team.leader.name} coordenará a resposta.`}
-                </p>
-              </div>
             </div>
           ) : (
             messages.map((message) => (
@@ -366,31 +305,13 @@ export default function TeamChatPage() {
                   message.role === 'user' ? 'justify-end' : 'justify-start'
                 }`}
               >
-                {message.role === 'assistant' && (
-                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
-                    <Users size={16} className="text-green-600" />
-                  </div>
-                )}
-                
                 <div
-                  className={`max-w-2xl px-4 py-2 rounded-lg ${
+                  className={`max-w-2xl px-4 py-3 rounded-lg ${
                     message.role === 'user'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-blue-600 text-white ml-auto'
                       : 'bg-white text-gray-900 border border-gray-200'
                   }`}
                 >
-                  {message.role === 'assistant' && message.agent_name && (
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                        👤 {message.agent_name}
-                      </div>
-                      {message.agent_name !== 'Time' && team.leader?.name === message.agent_name && (
-                        <div title="Líder do time">
-                          <Crown size={12} className="text-yellow-500" />
-                        </div>
-                      )}
-                    </div>
-                  )}
                   {message.role === 'user' ? (
                     <div className="whitespace-pre-wrap">{message.content}</div>
                   ) : (
@@ -404,26 +325,17 @@ export default function TeamChatPage() {
                     {new Date(message.timestamp).toLocaleTimeString()}
                   </div>
                 </div>
-
-                {message.role === 'user' && (
-                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
-                    <User size={16} className="text-gray-600" />
-                  </div>
-                )}
               </div>
             ))
           )}
           
           {(loading || isStreaming) && (
             <div className="flex gap-3 justify-start">
-              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
-                <Users size={16} className="text-green-600" />
-              </div>
               <div className="bg-white text-gray-900 border border-gray-200 px-4 py-3 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
-                  <Loader size={16} className="animate-spin text-green-600" />
+                  <Loader size={16} className="animate-spin text-blue-600" />
                   <span className="font-medium">
-                    {isStreaming ? 'O time está respondendo...' : 'O time está colaborando...'}
+                    {isStreaming ? 'Respondendo...' : 'Processando...'}
                   </span>
                 </div>
 

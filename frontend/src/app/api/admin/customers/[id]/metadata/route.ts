@@ -40,45 +40,35 @@ export async function GET(
       return NextResponse.json({ error: 'Customer não encontrado' }, { status: 404 })
     }
 
-    // Ler arquivo TOML
-    try {
-      let tomlContent = ''
+    // Ler TOML do banco de dados
+    let tomlContent = ''
 
-      if (customer.metadata_file) {
+    if (customer.metadata_toml) {
+      // Usar conteúdo do banco (nova abordagem)
+      tomlContent = customer.metadata_toml
+    } else if (customer.metadata_file) {
+      // Fallback: tentar ler do arquivo (compatibilidade com dados antigos)
+      try {
         const tomlPath = join(process.cwd(), customer.metadata_file)
         tomlContent = await readFile(tomlPath, 'utf-8')
-      } else {
-        // Se não tem arquivo, gerar template padrão
+      } catch (fileError) {
+        console.warn('⚠️ Arquivo TOML legado não encontrado, usando template padrão')
         tomlContent = generateDefaultToml(customer.slug)
       }
-
-      return NextResponse.json({
-        customer: {
-          id: customer.id,
-          name: customer.name,
-          slug: customer.slug
-        },
-        toml_content: tomlContent,
-        file_path: customer.metadata_file
-      })
-
-    } catch (fileError) {
-      console.error('Erro ao ler arquivo TOML:', fileError)
-
-      // Se não conseguir ler, gerar template padrão
-      const defaultToml = generateDefaultToml(customer.slug)
-
-      return NextResponse.json({
-        customer: {
-          id: customer.id,
-          name: customer.name,
-          slug: customer.slug
-        },
-        toml_content: defaultToml,
-        file_path: null,
-        warning: 'Arquivo de metadados não encontrado. Usando template padrão.'
-      })
+    } else {
+      // Sem metadados, gerar template padrão
+      tomlContent = generateDefaultToml(customer.slug)
     }
+
+    return NextResponse.json({
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        slug: customer.slug
+      },
+      toml_content: tomlContent,
+      file_path: customer.metadata_file
+    })
 
   } catch (error) {
     console.error('Erro ao obter metadados:', error)
@@ -151,31 +141,18 @@ export async function PUT(
       )
     }
 
-    // Criar diretório se não existir
-    const metadataDir = join(process.cwd(), 'config', 'customers')
-    await mkdir(metadataDir, { recursive: true })
-
-    // Caminho do arquivo
-    const tomlPath = join(metadataDir, `${customer.slug}.toml`)
-    const relativePath = `config/customers/${customer.slug}.toml`
-
-    // Salvar arquivo
-    await writeFile(tomlPath, toml_content, 'utf-8')
-
-    // Atualizar referência no banco se necessário
-    if (customer.metadata_file !== relativePath) {
-      await prisma.customers.update({
-        where: { id: customerId },
-        data: {
-          metadata_file: relativePath,
-          updated_at: new Date()
-        }
-      })
-    }
+    // Salvar TOML diretamente no banco de dados
+    await prisma.customers.update({
+      where: { id: customerId },
+      data: {
+        metadata_toml: toml_content,
+        updated_at: new Date()
+      }
+    })
 
     return NextResponse.json({
       message: 'Metadados atualizados com sucesso',
-      file_path: relativePath,
+      stored_in: 'database',
       updated_at: new Date().toISOString()
     })
 

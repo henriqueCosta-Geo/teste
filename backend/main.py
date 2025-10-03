@@ -51,24 +51,42 @@ file_processor = FileProcessor()
 # Initialize MetricsCollector
 metrics_collector = None
 
+# Initialize MongoDB
+mongo_service = None
+
 # Startup
 @app.on_event("startup")
 async def _startup():
-    global metrics_collector
+    global metrics_collector, mongo_service
     create_tables()
     os.makedirs("/app/uploads", exist_ok=True)
-    
+
+    # Initialize MongoDB
+    try:
+        from mongo_service import init_mongo, get_mongo_service
+
+        mongo_connected = await init_mongo()
+        if mongo_connected:
+            mongo_service = get_mongo_service()
+            logging.info("✅ MongoDB initialized successfully")
+        else:
+            logging.warning("⚠️ MongoDB not available - system will continue without it")
+            mongo_service = None
+    except Exception as e:
+        logging.error(f"❌ Failed to initialize MongoDB: {e}")
+        mongo_service = None
+
     # Initialize metrics collection system
     try:
         from metrics_collector import MetricsCollector
         import asyncio
-        
+
         metrics_collector = MetricsCollector()
         await metrics_collector.initialize()
-        
+
         # Iniciar workers em background
         asyncio.create_task(metrics_collector.start_workers())
-        
+
         logging.info("✅ Metrics collection system and workers initialized")
     except Exception as e:
         logging.error(f"❌ Failed to initialize metrics collector: {e}")
@@ -88,6 +106,21 @@ async def _startup():
         ensure_sample_data()
     except Exception as e:
         logging.error(f"❌ Failed to create sample data: {e}")
+
+# Shutdown
+@app.on_event("shutdown")
+async def _shutdown():
+    """Fechar conexões ao encerrar aplicação"""
+    global mongo_service
+
+    # Fechar MongoDB
+    if mongo_service:
+        try:
+            from mongo_service import close_mongo
+            await close_mongo()
+            logging.info("✅ MongoDB connection closed")
+        except Exception as e:
+            logging.error(f"❌ Error closing MongoDB: {e}")
 
 # Inclua os routers depois do app existir
 app.include_router(agent_router)

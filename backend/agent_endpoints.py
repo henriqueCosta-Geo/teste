@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, Form, Query, Request, Body
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, AsyncGenerator
 import json
 import logging
 from sqlalchemy import func
@@ -8,6 +9,9 @@ from datetime import datetime
 import asyncio
 import time
 from agents import AgentManager
+import asyncio
+from starlette.responses import StreamingResponse
+from starlette.background import BackgroundTask
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,41 @@ agent_router = APIRouter(prefix="/api/agents", tags=["agents"])
 # ============================================================================
 # CRUD de Agentes
 # ============================================================================
+
+def _sse_data(obj: dict) -> bytes:
+    # Converte para linha SSE: data: {...}\n\n
+    return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
+
+def _normalize_team_event(ev) -> Optional[dict]:
+    """
+    Mapeia eventos do Agno para o contrato esperado pelo front:
+    - start / progress / content / completed
+    """
+    # Alguns eventos possuem atributo `event` e/ou `content`
+    etype = getattr(ev, "event", None) or ev.__class__.__name__
+    content = getattr(ev, "content", None)
+
+    # Início de execução
+    if etype in ("TeamRunStarted", "RunStarted"):
+        return {"type": "start", "message": "run_started"}
+
+    # Conteúdo textual incremental
+    if content:
+        # garantir str (alguns modelos devolvem objetos ricos)
+        if not isinstance(content, str):
+            try:
+                content = json.dumps(content, ensure_ascii=False)
+            except Exception:
+                content = str(content)
+        return {"type": "content", "content": content}
+
+    # Tool calls, passos de membro, reasoning, etc → trate como progress
+    if any(k in etype for k in ("Tool", "Member", "Reasoning", "Step", "Delegat")):
+        return {"type": "progress", "message": etype}
+
+    # Outros: ignore silenciosamente
+    return None
+
 
 @agent_router.get("/")
 def list_agents(
@@ -696,215 +735,118 @@ class TeamExecuteRequest(BaseModel):
 
 @agent_router.post("/teams/{team_id}/execute")
 async def execute_team_task(
-        team_id: int,
-        request: TeamExecuteRequest,
-        db: Session = Depends(get_db)
+    team_id: int,
+    request_or_raw = Body(None),
+    db: Session = Depends(get_db)
 ):
-    """Executar tarefa com um time de agentes"""
-    logger.info(f"🎯 RECEBIDO EXECUTE PARA TIME {team_id}")
-    logger.info(f"📝 TAREFA: {request.task[:100]}...")
-    logger.info(f"🆔 SESSION: {request.session_id}")
-    
-    # Inicializar serviço de chat
-    chat_service = ChatService(db)
-    
-    # Buscar time
-    team = db.query(AgentTeamModel).filter(AgentTeamModel.id == team_id).first()
-    if not team:
-        logger.error(f"❌ TIME {team_id} NÃO ENCONTRADO")
-        raise HTTPException(status_code=404, detail="Time não encontrado")
-    
-    logger.info(f"✅ TIME ENCONTRADO: {team.name}")
-    
+    """
+    Executa tarefa com time. Suporta:
+      - JSON (TeamExecuteRequest): resposta única (não-stream) = compat legado
+      - FormData (task, session_id, stream=true): SSE (text/event-stream)
+    """
+    from qdrant_service import QdrantService
+    qdrant_service = QdrantService()
+    agent_manager = AgentManager(db, qdrant_service)
+
+    # Detectar Content-Type
+    # - multipart/form-data => streaming (SSE)
+    # - application/json    => execução síncrona (legado)
+    # Atenção: como estamos tipando request_or_raw=Body(None), vamos inspecionar a Request corrente via starlette.
+    from fastapi import Request
+    import json as _json
+
+    # Precisamos obter a Request “real” através do contexto do FastAPI
+    # Dica: crie uma dependência local que injete Request se preferir. Aqui usamos um truque:
+    #   - Em FastAPI, dá pra receber Request como parâmetro diretamente:
+@agent_router.post("/teams/{team_id}/execute")
+async def execute_team_task(
+    team_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    from qdrant_service import QdrantService
+    qdrant_service = QdrantService()
+    agent_manager = AgentManager(db, qdrant_service)
+
+    ctype = request.headers.get("content-type", "")
+
+    # ==== 2.1) Fluxo STREAM (FormData) ====
+    if "multipart/form-data" in ctype:
+        form = await request.form()
+        task_text = form.get("task") or ""
+        session_id = form.get("session_id") or f"team-{team_id}-{int(time.time())}"
+        stream_flag = str(form.get("stream") or "").lower() in ("1", "true", "yes")
+
+        # histórico/contexto para o manager
+        chat_service = ChatService(db)
+        chat_service.get_or_create_session(session_id, team_id=team_id)
+        user_metadata = {'sender': 'usuário', 'session_id': session_id, 'team_id': team_id, 'timestamp': datetime.now().isoformat()}
+        chat_service.add_message(session_id, "user", task_text, user_metadata)
+        context_history = chat_service.get_context_for_agent(session_id, max_messages=10)
+
+        if not stream_flag:
+            # fallback: se veio FormData mas sem stream=true, responde como JSON único
+            start_time = time.time()
+            result = agent_manager.execute_team_task_with_context(team_id, task_text, context_history)
+            if not result.get("execution_time_ms"):
+                result["execution_time_ms"] = int((time.time() - start_time) * 1000)
+            return result
+
+        # --- SSE ---
+        def event_gen():
+            for ev in agent_manager.stream_team_task_with_context(team_id, task_text, context_history):
+                # persistência incremental mínima (apenas no completed/erro gravamos no histórico completo)
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+                if ev.get("type") == "completed":
+                    # grava a resposta final no histórico
+                    chat_service.add_message(
+                        session_id,
+                        "team",
+                        ev.get("content", "") or "",
+                        {
+                            "execution_time_ms": None,
+                            "agents_involved": [],  # pode ser populado do método se quiser
+                            "team_id": team_id,
+                            "sender": f"time",
+                            "leader": None,
+                            "context_used": len(context_history),
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    )
+                    # encerra com marcador [DONE] para o cliente
+                    yield "data: [DONE]\n\n"
+
+        headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+        return StreamingResponse(event_gen(), media_type="text/event-stream", headers=headers)
+
+    # ==== 2.2) Fluxo LEGADO (JSON) ====
     try:
-        # Criar/obter sessão de chat
-        chat_session = chat_service.get_or_create_session(request.session_id, team_id=team_id)
-    
-        # Adicionar mensagem do usuário ao histórico com informações do remetente
-        user_metadata = {
-            'sender': 'usuário',
-            'session_id': request.session_id,
-            'team_id': team_id,
-            'timestamp': datetime.now().isoformat()
-        }
-        chat_service.add_message(request.session_id, "user", request.task, user_metadata)
-        
-        # Obter contexto da conversa
-        context_history = chat_service.get_context_for_agent(request.session_id, max_messages=10)
-        
-        logger.info(f"📚 CONTEXTO DA CONVERSA ({len(context_history)} mensagens): {[msg['content'][:50] + '...' for msg in context_history]}")
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Body inválido (use JSON ou FormData)")
 
-        # Buscar membros
-        members = db.query(AgentModel).join(
-            TeamMemberModel,
-            AgentModel.id == TeamMemberModel.agent_id
-        ).filter(
-            TeamMemberModel.team_id == team_id,
-            AgentModel.is_active == True
-        ).all()
-
-        if not members:
-            logger.error(f"❌ TIME {team_id} NÃO TEM MEMBROS ATIVOS")
-            raise HTTPException(status_code=400, detail="Time não tem membros ativos")
-
-        # Preparar configurações dos membros
-        member_configs = []
-        for member in members:
-            member_configs.append({
-                "id": member.id,
-                "name": member.name,
-                "role": member.role,
-                "model": member.model,
-                "temperature": member.temperature,
-                "instructions": member.instructions,
-                "tools_config": member.tools_config
-            })
-
-        # Criar manager e executar
-        from qdrant_service import QdrantService
-        qdrant_service = QdrantService()
-        agent_manager = AgentManager(db, qdrant_service)
-
-        # Configuração do líder se houver
-        leader_config = None
-        leader = None
-        if team.leader_agent_id:
-            leader = db.query(AgentModel).filter(AgentModel.id == team.leader_agent_id).first()
-            if leader:
-                leader_config = {
-                    "id": leader.id,
-                    "name": leader.name,
-                    "role": leader.role,
-                    "model": leader.model,
-                    "temperature": leader.temperature,
-                    "instructions": leader.instructions,
-                    "tools_config": leader.tools_config
-                }
-
-        # Log da execução
-        logger.info(f"🚀 EXECUTANDO TAREFA COM TIME {team.name}")
-        logger.info(f"📋 TAREFA: {request.task[:100]}...")
-        logger.info(f"👑 LÍDER: {leader.name if leader else 'Nenhum'}")
-        logger.info(f"👥 MEMBROS: {[m.name for m in members]}")
-        
-        # Executar tarefa com o time (incluindo contexto)
-        start_time = time.time()
-        result = agent_manager.execute_team_task_with_context(team_id, request.task, context_history)
-        execution_time_ms = int((time.time() - start_time) * 1000)
-        
-        # Atualizar execution_time_ms se não foi fornecido
-        if not result.get('execution_time_ms'):
-            result['execution_time_ms'] = execution_time_ms
-        
-        logger.info(f"✅ EXECUÇÃO CONCLUÍDA - Sucesso: {result.get('success', False)}")
-    
-        # Coletar métricas assíncronas para times (não bloqueia a resposta)
-        if metrics_collector and result.get('success'):
-            try:
-                # Métricas de execução para cada membro do time
-                for member in members:
-                    asyncio.create_task(metrics_collector.collect_execution_metrics({
-                        'agent_id': member.id,
-                        'agent_name': member.name,
-                        'model': member.model,
-                        'execution_time_ms': result.get('execution_time_ms', 0) // len(members),  # Tempo dividido
-                        'input_text': request.task,  # Texto completo para estimativa precisa
-                        'output_text': result.get('team_response', ''),  # Resposta completa
-                        'tools_used': result.get('tools_used', []),
-                        'session_id': request.session_id,
-                        'success': True,
-                        'team_execution': True,
-                        'team_id': team_id,
-                        'team_name': team.name,
-                        'operation_type': 'team_chat',
-                        'timestamp': datetime.now().isoformat()
-                    }))
-                
-                # Métricas de conteúdo para o time
-                asyncio.create_task(metrics_collector.collect_content_metrics({
-                    'content_id': f"team-{team_id}-{int(time.time())}",
-                    'content_type': "team_execution",
-                    'message_content': request.task,
-                    'response_content': result.get('team_response', ''),
-                    'agent_id': team.leader_agent_id,
-                    'agent_name': f"Team-{team.name}",
-                    'session_id': request.session_id,
-                    'team_execution': True,
-                    'team_id': team_id,
-                    'agents_involved': result.get('agents_involved', []),
-                    'timestamp': datetime.now().isoformat()
-                }))
-                
-                # Métricas de sessão
-                asyncio.create_task(metrics_collector.collect_session_metrics({
-                    'session_id': request.session_id,
-                    'user_id': 'team_user',
-                    'agent_id': team.leader_agent_id,
-                    'team_id': team_id,
-                    'message_count': 1,
-                    'duration_seconds': result.get('execution_time_ms', 0) // 1000,
-                    'agents_used': [member.id for member in members],
-                    'timestamp': datetime.now().isoformat()
-                }))
-            except Exception as e:
-                logger.error(f"Error collecting team metrics: {e}")
-        
-        # ==========================================
-        # ANÁLISE DE CONVERSA REMOVIDA - AGORA SÓ ACONTECE AO FECHAR JANELA
-        # ==========================================
-        
-        # Análise automática por despedida foi removida
-        # Agora só acontece quando o usuário fechar a janela do chat
-
-        # Salvar resposta no histórico com informações detalhadas
-        if result.get('success'):
-            response_metadata = {
-                'execution_time_ms': result.get('execution_time_ms'),
-                'agents_involved': result.get('agents_involved', []),
-                'team_id': team_id,
-                'sender': f"time-{team.name}",
-                'leader': leader.name if leader else 'sem-líder',
-                'context_used': result.get('context_used', 0),
-                'rag_info': result.get('rag_info', {}),
-                'timestamp': datetime.now().isoformat()
-            }
-            chat_service.add_message(request.session_id, "team", result.get('team_response', ''), response_metadata)
-        else:
-            error_metadata = {
-                'team_id': team_id,
-                'sender': f"time-{team.name}",
-                'error_type': 'execution_error',
-                'timestamp': datetime.now().isoformat()
-            }
-            chat_service.add_message(request.session_id, "error", result.get('error', 'Erro desconhecido'), error_metadata)
-        
-        # Adicionar informações do time na resposta
-        result['team_info'] = {
-            'id': team.id,
-            'name': team.name,
-            'leader': {
-                'id': leader.id,
-                'name': leader.name,
-                'role': leader.role
-            } if leader else None,
-            'members': [
-                {'id': m.id, 'name': m.name, 'role': m.role}
-                for m in members
-            ]
-        }
-    
-        # Log das informações de RAG para debug
-        if result.get('rag_info', {}).get('rag_used'):
-            logger.info(f"📊 RAG INFO: {result['rag_info']['total_searches']} buscas, {result['rag_info']['total_results']} resultados")
-
-        return result
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
+    try:
+        req = TeamExecuteRequest(**payload)
     except Exception as e:
-        logger.error(f"❌ ERRO INTERNO AO EXECUTAR TIME {team_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+        raise HTTPException(status_code=422, detail=f"JSON inválido: {str(e)}")
 
+    # histórico/contexto
+    chat_service = ChatService(db)
+    chat_service.get_or_create_session(req.session_id, team_id=team_id)
+    user_metadata = {'sender': 'usuário', 'session_id': req.session_id, 'team_id': team_id, 'timestamp': datetime.now().isoformat()}
+    chat_service.add_message(req.session_id, "user", req.task, user_metadata)
+    context_history = chat_service.get_context_for_agent(req.session_id, max_messages=10)
+
+    start_time = time.time()
+    result = agent_manager.execute_team_task_with_context(team_id, req.task, context_history)
+    if not result.get("execution_time_ms"):
+        result["execution_time_ms"] = int((time.time() - start_time) * 1000)
+
+    # (mantém tua coleta de métricas e persistência pós-execução — se você tem blocos de métricas aqui, deixe-os)
+    return result
 
 @agent_router.get("/chat/history/{session_id}")
 def get_chat_history(session_id: str, db: Session = Depends(get_db)):

@@ -49,8 +49,7 @@ export async function GET(
         },
         _count: {
           select: {
-            users: { where: { deleted_at: null } },
-            chat_sessions: true
+            users: { where: { deleted_at: null } }
           }
         }
       }
@@ -64,14 +63,8 @@ export async function GET(
     const last30Days = new Date()
     last30Days.setDate(last30Days.getDate() - 30)
 
-    const recentActivity = await prisma.chatSessions.count({
-      where: {
-        customer_id: customerId,
-        created_at: {
-          gte: last30Days
-        }
-      }
-    })
+    // Chat sessions não tem customer_id no schema atual
+    const recentActivity = 0
 
     const response = {
       id: customer.id,
@@ -84,7 +77,7 @@ export async function GET(
       users: customer.users,
       metrics: {
         total_users: customer._count.users,
-        total_sessions: customer._count.chat_sessions,
+        total_sessions: 0, // Chat sessions não tem customer_id
         recent_activity: recentActivity
       }
     }

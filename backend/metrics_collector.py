@@ -148,33 +148,75 @@ class MetricsCollector:
     async def request_conversation_classification(self, session_id: str, conversation_data: Dict[str, Any]):
         """Solicitar classificação inteligente de conversa"""
         try:
+            # Serializar mensagens para dict (converter objetos ChatMessage)
+            serializable_data = conversation_data.copy()
+            if 'messages' in serializable_data:
+                serializable_messages = []
+                for msg in serializable_data['messages']:
+                    # Se for objeto ChatMessage, converter para dict
+                    if hasattr(msg, '__dict__'):
+                        # Converter metadata corretamente (pode ser objeto SQLAlchemy)
+                        metadata_value = getattr(msg, 'metadata', {})
+                        if metadata_value and not isinstance(metadata_value, dict):
+                            try:
+                                # Tentar converter para dict se for objeto
+                                metadata_dict = dict(metadata_value)
+                            except (TypeError, ValueError):
+                                # Se não conseguir, usar dict vazio
+                                metadata_dict = {}
+                        else:
+                            metadata_dict = metadata_value if metadata_value else {}
+
+                        # Converter timestamp para string se necessário
+                        timestamp_value = getattr(msg, 'timestamp', None)
+                        if timestamp_value and hasattr(timestamp_value, 'isoformat'):
+                            timestamp_str = timestamp_value.isoformat()
+                        else:
+                            timestamp_str = str(timestamp_value) if timestamp_value else None
+
+                        msg_dict = {
+                            'id': getattr(msg, 'id', None),
+                            'type': getattr(msg, 'type', None),
+                            'content': getattr(msg, 'content', None),
+                            'sender': getattr(msg, 'sender', None),
+                            'timestamp': timestamp_str,
+                            'metadata': metadata_dict
+                        }
+                        serializable_messages.append(msg_dict)
+                    # Se já for dict, usar diretamente
+                    elif isinstance(msg, dict):
+                        serializable_messages.append(msg)
+                serializable_data['messages'] = serializable_messages
+
             classification_data = {
                 'session_id': session_id,
-                'conversation_data': conversation_data,
+                'conversation_data': serializable_data,
                 'timestamp': datetime.now().isoformat(),
                 'request_id': str(uuid.uuid4())
             }
-            
+
             # Verificar se Redis está disponível
             if not self.redis_client:
                 logger.warning("⚠️ Redis não conectado - processando classificação diretamente")
                 await self._process_conversation_classification(classification_data)
                 return
-            
+
             await self.redis_client.lpush(self.CLASSIFICATION_QUEUE, json.dumps(classification_data))
             logger.info(f"🤖 Classificação solicitada para sessão: {session_id}")
-            
+
         except Exception as e:
             logger.error(f"❌ Erro ao solicitar classificação: {e}")
             # Fallback direto para processamento
             try:
-                classification_data = {
-                    'session_id': session_id,
-                    'conversation_data': conversation_data,
-                    'timestamp': datetime.now().isoformat(),
-                    'request_id': str(uuid.uuid4())
-                }
-                await self._process_conversation_classification(classification_data)
+                # Usar dados já serializados se disponíveis
+                if 'serializable_data' in locals():
+                    classification_data = {
+                        'session_id': session_id,
+                        'conversation_data': serializable_data,
+                        'timestamp': datetime.now().isoformat(),
+                        'request_id': str(uuid.uuid4())
+                    }
+                    await self._process_conversation_classification(classification_data)
             except Exception as fallback_error:
                 logger.error(f"❌ Erro no fallback de classificação: {fallback_error}")
     

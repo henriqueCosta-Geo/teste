@@ -34,6 +34,52 @@ from pydantic import BaseModel
 teams_router = APIRouter(prefix="/api/teams", tags=["teams"])
 
 # ============================================================================
+# Cache de AgentManager por session para manter memória do Agno Team
+# ============================================================================
+from collections import OrderedDict
+from typing import Dict
+
+class AgentManagerCache:
+    """Cache LRU para AgentManagers por session_id"""
+    def __init__(self, max_size: int = 100):
+        self.cache: OrderedDict[str, tuple] = OrderedDict()  # session_id -> (agent_manager, last_used)
+        self.max_size = max_size
+
+    def get(self, session_id: str, db: Session, qdrant_service):
+        """Obtém ou cria AgentManager para uma session"""
+        current_time = time.time()
+
+        if session_id in self.cache:
+            agent_manager, _ = self.cache[session_id]
+            # Atualizar timestamp e mover para o final (mais recente)
+            self.cache.move_to_end(session_id)
+            self.cache[session_id] = (agent_manager, current_time)
+            logger.info(f"♻️ REUTILIZANDO AgentManager para session {session_id}")
+            return agent_manager
+
+        # Criar novo AgentManager
+        agent_manager = AgentManager(db, qdrant_service)
+        self.cache[session_id] = (agent_manager, current_time)
+        logger.info(f"🆕 CRIANDO NOVO AgentManager para session {session_id}")
+
+        # Limpar cache se exceder tamanho máximo (remove o mais antigo)
+        if len(self.cache) > self.max_size:
+            oldest_session = next(iter(self.cache))
+            del self.cache[oldest_session]
+            logger.info(f"🗑️ Removido AgentManager antigo da session {oldest_session}")
+
+        return agent_manager
+
+    def clear_session(self, session_id: str):
+        """Remove AgentManager de uma session específica"""
+        if session_id in self.cache:
+            del self.cache[session_id]
+            logger.info(f"🗑️ AgentManager removido da session {session_id}")
+
+# Instância global do cache
+agent_manager_cache = AgentManagerCache(max_size=100)
+
+# ============================================================================
 # Times de Agentes
 # ============================================================================
 
@@ -253,6 +299,8 @@ async def execute_team_task(
         task: str = Form(...),
         session_id: str = Form(...),
         stream: bool = Form(False),
+        customer_id: Optional[int] = Form(None),
+        user_id: Optional[int] = Form(None),
         db: Session = Depends(get_db)
 ):
     """Executar tarefa com um time de agentes"""
@@ -260,9 +308,21 @@ async def execute_team_task(
     logger.info(f"📝 TAREFA: {task[:100]}...")
     logger.info(f"🆔 SESSION: {session_id}")
     logger.info(f"🔄 STREAM: {stream}")
+    logger.info(f"👤 CUSTOMER: {customer_id}, USER: {user_id}")
 
     # Inicializar serviço de chat
     chat_service = ChatService(db)
+
+    # Inicializar MongoDB chat service (se disponível)
+    mongo_chat_svc = None
+    try:
+        from main import mongo_service
+        if mongo_service is not None and mongo_service.is_connected:
+            from mongo_chat_service import get_mongo_chat_service
+            mongo_chat_svc = get_mongo_chat_service(mongo_service)
+            logger.info("✅ MongoDB chat service inicializado")
+    except Exception as e:
+        logger.warning(f"⚠️ MongoDB chat service não disponível: {e}")
 
     # Buscar time
     team = db.query(AgentTeamModel).filter(AgentTeamModel.id == team_id).first()
@@ -273,17 +333,43 @@ async def execute_team_task(
     logger.info(f"✅ TIME ENCONTRADO: {team.name}")
 
     try:
-        # Criar/obter sessão de chat
-        chat_session = chat_service.get_or_create_session(session_id, team_id=team_id)
+        # ========================================
+        # MONGODB - Criar sessão de chat
+        # ========================================
+        if mongo_chat_svc:
+            await mongo_chat_svc.save_chat_session(
+                chat_id=session_id,
+                customer_id=customer_id,
+                created_by=user_id,
+                team_id=team_id
+            )
+            logger.info(f"✅ [MONGO] Sessão criada: {session_id}")
 
-        # Adicionar mensagem do usuário ao histórico
+        # Adicionar mensagem do usuário (MongoDB)
         user_metadata = {
             'sender': 'usuário',
             'session_id': session_id,
             'team_id': team_id,
             'timestamp': datetime.now().isoformat()
         }
-        chat_service.add_message(session_id, "user", task, user_metadata)
+
+        if mongo_chat_svc:
+            await mongo_chat_svc.add_message_to_chat(
+                chat_id=session_id,
+                message_type="user",
+                content=task,
+                metadata=user_metadata
+            )
+            logger.info(f"✅ [MONGO] Mensagem do usuário salva")
+
+        # ========================================
+        # LEGACY: Manter PostgreSQL para compatibilidade (opcional)
+        # ========================================
+        try:
+            chat_session = chat_service.get_or_create_session(session_id, team_id=team_id)
+            chat_service.add_message(session_id, "user", task, user_metadata)
+        except Exception as e:
+            logger.warning(f"⚠️ [LEGACY] Erro ao salvar no PostgreSQL (ignorado): {e}")
 
         # Obter contexto da conversa
         context_history = chat_service.get_context_for_agent(session_id, max_messages=10)
@@ -303,10 +389,10 @@ async def execute_team_task(
             logger.error(f"❌ TIME {team_id} NÃO TEM MEMBROS ATIVOS")
             raise HTTPException(status_code=400, detail="Time não tem membros ativos")
 
-        # Criar manager e executar
+        # Obter AgentManager do cache (mantém memória do Agno Team)
         from qdrant_service import QdrantService
         qdrant_service = QdrantService()
-        agent_manager = AgentManager(db, qdrant_service)
+        agent_manager = agent_manager_cache.get(session_id, db, qdrant_service)
 
         # Log da execução
         logger.info(f"🚀 EXECUTANDO TAREFA COM TIME {team.name}")
@@ -322,40 +408,68 @@ async def execute_team_task(
                     yield f"data: {json.dumps({'type': 'start', 'team_name': team.name, 'members': [m.name for m in members]})}\n\n"
 
                     # Executar tarefa e simular streaming baseado na resposta do agno
-                    result = agent_manager.execute_team_task_with_context(team_id, task, context_history)
+                    # ✅ Passar session_id para manter o mesmo Team entre requests
+                    result = agent_manager.execute_team_task_with_context(
+                        team_id=team_id,
+                        task=task,
+                        context_history=context_history,
+                        session_id=session_id
+                    )
 
                     if result.get('success'):
                         response_content = result.get('team_response', '')
+                        agent_name = result.get('agents_involved', ['Time'])[0] if result.get('agents_involved') else 'Time'
 
-                        # Simular streaming progressivo - construir palavra por palavra
+                        # ✅ STREAMING PALAVRA POR PALAVRA (igual ao coordenador)
                         words = response_content.split(' ')
-                        current_text = ''
 
                         for i, word in enumerate(words):
-                            current_text += word + (' ' if i < len(words) - 1 else '')
+                            # Enviar apenas a palavra atual (não o texto acumulado)
+                            word_with_space = word + (' ' if i < len(words) - 1 else '')
+                            yield f"data: {json.dumps({'type': 'content', 'content': word_with_space, 'agent_name': agent_name})}\n\n"
+                            await asyncio.sleep(0.03)  # Delay de 30ms
 
-                            # Enviar o texto acumulado a cada palavra
-                            yield f"data: {json.dumps({'type': 'content', 'content': current_text, 'agent_name': result.get('agents_involved', ['Time'])[0] if result.get('agents_involved') else 'Time'})}\n\n"
-                            await asyncio.sleep(0.05)  # Pausa pequena para simular escrita
-
-                        # Salvar resposta no histórico
+                        # Salvar resposta do time (MongoDB)
                         response_metadata = {
                             'execution_time_ms': int((time.time() - start_time) * 1000),
                             'agents_involved': result.get('agents_involved', []),
                             'team_id': team_id,
                             'sender': f"time-{team.name}",
-                            'timestamp': datetime.now().isoformat()
+                            'timestamp': datetime.now().isoformat(),
+                            'rag': result.get('rag_used', False),
+                            'tokens': result.get('tokens', {'input': 0, 'output': 0, 'total': 0}),
+                            'agent_id': result.get('agents_involved', [None])[0] if result.get('agents_involved') else None
                         }
-                        chat_service.add_message(session_id, "team", response_content, response_metadata)
+
+                        if mongo_chat_svc:
+                            await mongo_chat_svc.add_message_to_chat(
+                                chat_id=session_id,
+                                message_type="team",
+                                content=response_content,
+                                metadata=response_metadata
+                            )
+                            logger.info(f"✅ [MONGO] Resposta do time salva")
+
+                        # Legacy PostgreSQL (opcional)
+                        try:
+                            chat_service.add_message(session_id, "team", response_content, response_metadata)
+                        except Exception as e:
+                            logger.warning(f"⚠️ [LEGACY] Erro ao salvar no PostgreSQL: {e}")
 
                         # Evento de conclusão
                         yield f"data: {json.dumps({'type': 'completed', 'execution_time_ms': int((time.time() - start_time) * 1000)})}\n\n"
+                        # [DONE] deve ser enviado sem JSON para SSE padrão
+                        yield "data: [DONE]\n\n"
                     else:
                         yield f"data: {json.dumps({'type': 'error', 'message': result.get('error', 'Erro na execução')})}\n\n"
+                        # [DONE] deve ser enviado sem JSON para SSE padrão
+                        yield "data: [DONE]\n\n"
 
                 except Exception as e:
                     logger.error(f"❌ ERRO NO STREAMING: {e}")
                     yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                    # [DONE] deve ser enviado sem JSON para SSE padrão
+                    yield "data: [DONE]\n\n"
 
             return StreamingResponse(
                 generate_stream(),
@@ -369,7 +483,13 @@ async def execute_team_task(
         else:
             # Executar tarefa com o time (incluindo contexto) - modo síncrono
             start_time = time.time()
-            result = agent_manager.execute_team_task_with_context(team_id, task, context_history)
+            # ✅ Passar session_id para manter o mesmo Team entre requests
+            result = agent_manager.execute_team_task_with_context(
+                team_id=team_id,
+                task=task,
+                context_history=context_history,
+                session_id=session_id
+            )
             execution_time_ms = int((time.time() - start_time) * 1000)
 
             if not result.get('execution_time_ms'):
@@ -377,7 +497,7 @@ async def execute_team_task(
 
             logger.info(f"✅ EXECUÇÃO CONCLUÍDA - Sucesso: {result.get('success', False)}")
 
-            # Salvar resposta no histórico
+            # Salvar resposta do time (MongoDB)
             if result.get('success'):
                 response_metadata = {
                     'execution_time_ms': result.get('execution_time_ms'),
@@ -386,7 +506,21 @@ async def execute_team_task(
                     'sender': f"time-{team.name}",
                     'timestamp': datetime.now().isoformat()
                 }
-                chat_service.add_message(session_id, "team", result.get('team_response', ''), response_metadata)
+
+                if mongo_chat_svc:
+                    await mongo_chat_svc.add_message_to_chat(
+                        chat_id=session_id,
+                        message_type="team",
+                        content=result.get('team_response', ''),
+                        metadata=response_metadata
+                    )
+                    logger.info(f"✅ [MONGO] Resposta do time salva")
+
+                # Legacy PostgreSQL (opcional)
+                try:
+                    chat_service.add_message(session_id, "team", result.get('team_response', ''), response_metadata)
+                except Exception as e:
+                    logger.warning(f"⚠️ [LEGACY] Erro ao salvar no PostgreSQL: {e}")
 
             # Adicionar informações do time na resposta
             result['team_info'] = {

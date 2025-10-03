@@ -64,154 +64,53 @@ export default function AdminHome() {
 
 
   return (
-    <div className="space-y-8" style={{ '--primary-color': primaryColor } as any}>
-      {/* Header com branding customizado */}
-      <div className="text-center py-8">
-        {logoPath && (
-          <div className="mb-6">
-            <img
-              src={logoPath.startsWith('/logos/') ? `/api${logoPath}` : logoPath}
-              alt={`${customerName} Logo`}
-              className="h-16 w-auto mx-auto object-contain"
-            />
-          </div>
-        )}
-        <h1 className="text-4xl font-bold mb-4" style={{ color: primaryColor }}>
-          Bem-vindo ao {customerName}
-        </h1>
-        <p className="text-xl max-w-2xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
-          {welcomeMessage}
-        </p>
-      </div>
+    <div className="flex items-center justify-center min-h-[calc(100vh-12rem)]" style={{ '--primary-color': primaryColor } as any}>
+      <div className="max-w-2xl w-full mx-auto px-4">
+        {/* Header com branding customizado */}
+        <div className="text-center mb-12">
+          {logoPath && (
+            <div className="mb-8">
+              <img
+                src={logoPath.startsWith('/logos/') ? `/api${logoPath}` : logoPath}
+                alt={`${customerName} Logo`}
+                className="h-20 w-auto mx-auto object-contain"
+              />
+            </div>
+          )}
+          <h1 className="text-4xl font-bold mb-4" style={{ color: primaryColor }}>
+            Bem-vindo ao {customerName}
+          </h1>
+          <p className="text-xl" style={{ color: 'var(--text-secondary)' }}>
+            {welcomeMessage}
+          </p>
+        </div>
 
-      {/* Call to Action Principal */}
-      <div className="max-w-2xl mx-auto">
+        {/* Call to Action Principal */}
         <div
-          className="card text-center py-12"
+          className="card text-center py-16"
           style={{
             background: `linear-gradient(135deg, ${primaryColor}15, ${primaryColor}05)`,
             borderColor: `${primaryColor}30`
           }}
         >
-          <div className="mb-6">
-            <MessageCircle size={64} className="mx-auto" style={{ color: primaryColor }} />
+          <div className="mb-8">
+            <MessageCircle size={80} className="mx-auto" style={{ color: primaryColor }} />
           </div>
-          <h2 className="text-2xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
+          <h2 className="text-3xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>
             Comece uma Conversa
           </h2>
-          <p className="text-lg mb-8 max-w-md mx-auto" style={{ color: 'var(--text-secondary)' }}>
+          <p className="text-lg mb-10 max-w-md mx-auto" style={{ color: 'var(--text-secondary)' }}>
             Nossa IA está pronta para ajudar com suas dúvidas e necessidades
           </p>
           <Link
             href={defaultChatLink}
-            className="btn-primary btn-lg inline-flex items-center gap-3 text-lg px-8 py-4"
+            className="btn-primary btn-lg inline-flex items-center gap-3 text-lg px-10 py-5"
             style={{ backgroundColor: primaryColor, borderColor: primaryColor }}
           >
-            <MessageCircle size={20} />
+            <MessageCircle size={24} />
             Iniciar Conversa
           </Link>
         </div>
-      </div>
-
-      {/* Opções de Chat Disponíveis */}
-      <div className="max-w-4xl mx-auto">
-        <h3 className="text-xl font-semibold mb-6 text-center" style={{ color: 'var(--text-primary)' }}>
-          Escolha como deseja conversar
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {availableOptions.slice(0, 6).map((option) => (
-            <Link
-              key={`${option.type}-${option.id}`}
-              href={option.type === 'agent' ? `/agents/${option.id}/chat` : `/teams/${option.id}/chat`}
-              className="card hover:shadow-lg transition-all duration-200 hover:scale-105"
-              style={{ borderColor: `${primaryColor}20` }}
-            >
-              <div className="text-center p-6">
-                <div className="mb-4">
-                  {option.type === 'agent' ? (
-                    <Bot size={40} className="mx-auto" style={{ color: primaryColor }} />
-                  ) : (
-                    <Users size={40} className="mx-auto" style={{ color: primaryColor }} />
-                  )}
-                </div>
-                <h4 className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                  {option.name}
-                </h4>
-                <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-                  {option.description || (option.type === 'agent' ? 'Assistente especializado' : 'Equipe de atendimento')}
-                </p>
-                <div className="flex items-center justify-center gap-2 text-xs" style={{ color: primaryColor }}>
-                  <MessageCircle size={14} />
-                  Conversar
-                </div>
-              </div>
-            </Link>
-          ))}
-
-          {/* Opção de Busca */}
-          <Link
-            href="/search"
-            className="card hover:shadow-lg transition-all duration-200 hover:scale-105"
-            style={{ borderColor: `${primaryColor}20` }}
-          >
-            <div className="text-center p-6">
-              <div className="mb-4">
-                <Search size={40} className="mx-auto" style={{ color: primaryColor }} />
-              </div>
-              <h4 className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                Busca Inteligente
-              </h4>
-              <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-                Encontre informações específicas rapidamente
-              </p>
-              <div className="flex items-center justify-center gap-2 text-xs" style={{ color: primaryColor }}>
-                <Search size={14} />
-                Buscar
-              </div>
-            </div>
-          </Link>
-        </div>
-      </div>
-
-      {/* Informações Adicionais */}
-      <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="card text-center py-6">
-          <Clock size={32} className="mx-auto mb-3" style={{ color: primaryColor }} />
-          <h4 className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-            Disponível 24/7
-          </h4>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Nossos assistentes estão sempre prontos para ajudar
-          </p>
-        </div>
-
-        <div className="card text-center py-6">
-          <TrendingUp size={32} className="mx-auto mb-3" style={{ color: primaryColor }} />
-          <h4 className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-            Respostas Inteligentes
-          </h4>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            IA treinada com sua base de conhecimento
-          </p>
-        </div>
-
-        <div className="card text-center py-6">
-          <Calendar size={32} className="mx-auto mb-3" style={{ color: primaryColor }} />
-          <h4 className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-            Histórico Completo
-          </h4>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Acesse suas conversas anteriores a qualquer momento
-          </p>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="text-center py-8 border-t" style={{ borderColor: 'var(--border-primary)' }}>
-        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-          Powered by {customerName} • Suporte inteligente via IA
-        </p>
       </div>
     </div>
   )

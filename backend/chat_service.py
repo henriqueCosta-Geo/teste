@@ -20,11 +20,14 @@ class ChatService:
         self.db = db
     
     def get_or_create_session(self, session_id: str, team_id: Optional[int] = None, agent_id: Optional[int] = None) -> ChatSession:
-        """Obtém ou cria uma sessão de chat"""
+        """
+        Obtém ou cria uma sessão de chat (LEGACY - PostgreSQL)
+        NOTA: Novos chats devem usar MongoDB via mongo_chat_service.py
+        """
         session = self.db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
-        
+
         if not session:
-            logger.info(f"🆕 [CHAT] CRIANDO NOVA SESSÃO: {session_id} - Team: {team_id}, Agent: {agent_id}")
+            logger.info(f"🆕 [CHAT-LEGACY] CRIANDO NOVA SESSÃO: {session_id} - Team: {team_id}, Agent: {agent_id}")
             session = ChatSession(
                 session_id=session_id,
                 team_id=team_id,
@@ -34,11 +37,11 @@ class ChatService:
             self.db.commit()
             self.db.refresh(session)
         else:
-            logger.info(f"📝 [CHAT] SESSÃO EXISTENTE: {session_id} - Atualizando atividade")
+            logger.info(f"📝 [CHAT-LEGACY] SESSÃO EXISTENTE: {session_id} - Atualizando atividade")
             # Atualizar última atividade
             session.last_activity = datetime.now()
             self.db.commit()
-        
+
         return session
     
     def add_message(self, session_id: str, message_type: str, content: str, metadata: Optional[Dict] = None) -> ChatMessage:

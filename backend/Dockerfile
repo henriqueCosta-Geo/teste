@@ -16,7 +16,7 @@ RUN pip install --upgrade pip setuptools wheel
 COPY requirements.txt .
 
 # Instalar dependências Python com cache otimizado e logs detalhados
-RUN pip install --no-cache-dir --timeout=60 --verbose -r requirements.txt || \
+RUN pip install --timeout=60 --verbose -r requirements.txt || \
     (echo "❌ Falha na instalação das dependências. Lista de pacotes:" && cat requirements.txt && exit 1)
 
 # Copiar código da aplicação

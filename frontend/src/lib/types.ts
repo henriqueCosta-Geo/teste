@@ -105,7 +105,8 @@ export interface Customer {
   name: string
   slug: string
   is_active: boolean
-  metadata_file?: string
+  metadata_file?: string // DEPRECATED
+  metadata_toml?: string // Conteúdo TOML armazenado no banco
   users_count?: number
   agents_count?: number
   collections_count?: number

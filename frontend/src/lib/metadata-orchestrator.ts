@@ -25,16 +25,23 @@ export class MetadataOrchestrator {
 
       let metadata: CustomerMetadata = this.getDefaultMetadata()
 
-      // Ler arquivo de metadados TOML se existir
-      if (customer.metadata_file) {
+      // Ler metadados TOML do banco de dados
+      if (customer.metadata_toml) {
+        try {
+          const parsedMetadata = parseToml(customer.metadata_toml) as CustomerMetadata
+          // Mesclar com padrões
+          metadata = { ...metadata, ...parsedMetadata }
+        } catch (parseError) {
+          console.warn(`⚠️ Erro ao parsear TOML para ${customerSlug}, usando configurações padrão`)
+        }
+      } else if (customer.metadata_file && customer.metadata_file.trim()) {
+        // Fallback: tentar ler do arquivo (compatibilidade com dados antigos)
         try {
           const metadataContent = await readFile(customer.metadata_file, "utf-8")
           const parsedMetadata = parseToml(metadataContent) as CustomerMetadata
-
-          // Mesclar com padrões
           metadata = { ...metadata, ...parsedMetadata }
         } catch (fileError) {
-          console.warn(`Erro ao ler arquivo TOML para ${customerSlug}:`, fileError)
+          console.warn(`⚠️ Arquivo TOML legado não encontrado para ${customerSlug}, usando configurações padrão`)
         }
       }
 
@@ -72,10 +79,10 @@ export class MetadataOrchestrator {
         customer_plan: 'CUSTOM' // Metadata-driven plan
       },
       permissions: {
-        can_manage_agents: user.role !== "REGULAR" || metadata.features?.agents !== false,
-        can_manage_collections: user.role !== "REGULAR" || metadata.features?.collections !== false,
-        can_manage_teams: user.role !== "REGULAR" || metadata.features?.teams !== false,
-        can_view_analytics: user.role !== "REGULAR" || metadata.features?.analytics !== false,
+        can_manage_agents: user.role !== "USER" || metadata.features?.agents !== false,
+        can_manage_collections: user.role !== "USER" || metadata.features?.collections !== false,
+        can_manage_teams: user.role !== "USER" || metadata.features?.teams !== false,
+        can_view_analytics: user.role !== "USER" || metadata.features?.analytics !== false,
         can_manage_users: ["ADMIN", "SUPER_USER"].includes(user.role),
         can_manage_settings: ["ADMIN", "SUPER_USER"].includes(user.role)
       },

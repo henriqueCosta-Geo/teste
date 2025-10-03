@@ -102,15 +102,19 @@ class AgentExecution(Base):
 
 
 class ChatSession(Base):
+    """
+    DEPRECATED: Tabela legacy para compatibilidade
+    Novos chats devem usar MongoDB (collection 'chats')
+    """
     __tablename__ = "chat_sessions"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String(255), unique=True, index=True)  # UUID do frontend
     team_id = Column(Integer, ForeignKey("agent_teams.id"), nullable=True)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_activity = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
+
     # Relacionamentos
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
     team = relationship("AgentTeam")
