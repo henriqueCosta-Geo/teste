@@ -1533,7 +1533,28 @@ search("pressão sistema hidráulico", limit=3)
                 'total': 0
             }
 
-            if hasattr(final_response, 'metrics') and final_response.metrics:
+            # ✅ TENTAR EXTRAIR TOKENS DE VÁRIAS FONTES
+            tokens_found = False
+
+            # 1. Tentar pegar do RunResponse (se houver)
+            if run_response_indices and all_events:
+                run_response = all_events[run_response_indices[-1]]
+                if hasattr(run_response, 'metrics') and run_response.metrics:
+                    metrics = run_response.metrics
+                    if hasattr(metrics, 'input_tokens'):
+                        tokens_info['input'] = metrics.input_tokens
+                        tokens_found = True
+                    if hasattr(metrics, 'output_tokens'):
+                        tokens_info['output'] = metrics.output_tokens
+                        tokens_found = True
+                    if hasattr(metrics, 'total_tokens'):
+                        tokens_info['total'] = metrics.total_tokens
+                        tokens_found = True
+                    else:
+                        tokens_info['total'] = tokens_info['input'] + tokens_info['output']
+
+            # 2. Fallback: tentar pegar do final_response
+            if not tokens_found and hasattr(final_response, 'metrics') and final_response.metrics:
                 metrics = final_response.metrics
                 if hasattr(metrics, 'input_tokens'):
                     tokens_info['input'] = metrics.input_tokens
@@ -1543,6 +1564,49 @@ search("pressão sistema hidráulico", limit=3)
                     tokens_info['total'] = metrics.total_tokens
                 else:
                     tokens_info['total'] = tokens_info['input'] + tokens_info['output']
+                tokens_found = True
+
+            # 3. Buscar em todos os eventos por RunResponseEvent com metrics
+            if not tokens_found and all_events:
+                for event in reversed(all_events):  # Buscar do mais recente
+                    if hasattr(event, 'metrics') and event.metrics:
+                        metrics = event.metrics
+                        if hasattr(metrics, 'input_tokens'):
+                            tokens_info['input'] = metrics.input_tokens
+                        if hasattr(metrics, 'output_tokens'):
+                            tokens_info['output'] = metrics.output_tokens
+                        if hasattr(metrics, 'total_tokens'):
+                            tokens_info['total'] = metrics.total_tokens
+                        else:
+                            tokens_info['total'] = tokens_info['input'] + tokens_info['output']
+                        tokens_found = True
+                        logger.info(f"✅ [TIME-{team_id}] Tokens encontrados em evento: {type(event).__name__}")
+                        break
+
+            # 4. ✅ FALLBACK: Calcular tokens manualmente se não encontrou metrics
+            if not tokens_found or tokens_info['total'] == 0:
+                logger.warning(f"⚠️ [TIME-{team_id}] Tokens não encontrados em metrics - calculando manualmente")
+                try:
+                    import tiktoken
+                    # Usar encoding do GPT-4
+                    encoding = tiktoken.encoding_for_model("gpt-4")
+
+                    # Calcular tokens de output (resposta gerada)
+                    output_tokens = len(encoding.encode(response_content)) if response_content else 0
+
+                    # Estimar tokens de input (contexto + task)
+                    # Aproximação: somar contexto + task atual
+                    input_estimate = len(encoding.encode(context_history)) if context_history else 0
+                    input_estimate += len(encoding.encode(task)) if task else 0
+
+                    tokens_info['input'] = input_estimate
+                    tokens_info['output'] = output_tokens
+                    tokens_info['total'] = input_estimate + output_tokens
+
+                    logger.info(f"✅ [TIME-{team_id}] Tokens calculados manualmente: total={tokens_info['total']}")
+                except Exception as e:
+                    logger.error(f"❌ [TIME-{team_id}] Erro ao calcular tokens: {e}")
+                    # Manter zeros se falhar
 
             logger.info(f"✅ [TIME-{team_id}] EXECUÇÃO CONCLUÍDA: {execution_time}ms")
             logger.info(f"👥 [TIME-{team_id}] AGENTES ENVOLVIDOS: {agents_involved}")
