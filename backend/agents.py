@@ -1595,17 +1595,30 @@ search("pressão sistema hidráulico", limit=3)
                     output_tokens = len(encoding.encode(response_content)) if response_content else 0
 
                     # Estimar tokens de input (contexto + task)
-                    # Aproximação: somar contexto + task atual
-                    input_estimate = len(encoding.encode(context_history)) if context_history else 0
-                    input_estimate += len(encoding.encode(task)) if task else 0
+                    input_estimate = 0
+
+                    # context_history pode ser string ou lista
+                    if context_history:
+                        if isinstance(context_history, str):
+                            input_estimate = len(encoding.encode(context_history))
+                        elif isinstance(context_history, list):
+                            # Se for lista de mensagens, concatenar
+                            context_text = "\n".join(str(msg) for msg in context_history)
+                            input_estimate = len(encoding.encode(context_text))
+
+                    # Adicionar tokens do task
+                    if task:
+                        input_estimate += len(encoding.encode(str(task)))
 
                     tokens_info['input'] = input_estimate
                     tokens_info['output'] = output_tokens
                     tokens_info['total'] = input_estimate + output_tokens
 
-                    logger.info(f"✅ [TIME-{team_id}] Tokens calculados manualmente: total={tokens_info['total']}")
+                    logger.info(f"✅ [TIME-{team_id}] Tokens calculados: in={input_estimate}, out={output_tokens}, total={tokens_info['total']}")
                 except Exception as e:
                     logger.error(f"❌ [TIME-{team_id}] Erro ao calcular tokens: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
                     # Manter zeros se falhar
 
             logger.info(f"✅ [TIME-{team_id}] EXECUÇÃO CONCLUÍDA: {execution_time}ms")
