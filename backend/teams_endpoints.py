@@ -79,6 +79,179 @@ class AgentManagerCache:
 # Instância global do cache
 agent_manager_cache = AgentManagerCache(max_size=100)
 
+
+# ============================================================================
+# Funções Auxiliares
+# ============================================================================
+
+def count_tokens_for_user_message(text: str, model: str = "gpt-4") -> int:
+    """
+    Calcula tokens de uma mensagem do usuário usando tiktoken
+
+    Args:
+        text: Texto da mensagem
+        model: Modelo OpenAI (default: gpt-4)
+
+    Returns:
+        Número de tokens (input)
+    """
+    try:
+        import tiktoken
+
+        # Selecionar encoding baseado no modelo
+        if "gpt-4" in model:
+            encoding = tiktoken.encoding_for_model("gpt-4")
+        elif "gpt-3.5" in model:
+            encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+        else:
+            # Fallback para cl100k_base (usado por gpt-4 e gpt-3.5-turbo)
+            encoding = tiktoken.get_encoding("cl100k_base")
+
+        tokens = len(encoding.encode(text))
+        logger.info(f"🔢 [USER-TOKENS] Calculado {tokens} tokens para mensagem de {len(text)} chars")
+        return tokens
+
+    except ImportError:
+        # Fallback: estimativa aproximada (1 token ≈ 4 caracteres)
+        estimated = len(text) // 4
+        logger.warning(f"⚠️ tiktoken não disponível - estimando {estimated} tokens")
+        return estimated
+    except Exception as e:
+        logger.error(f"❌ Erro ao calcular tokens: {e}")
+        # Fallback: estimativa aproximada
+        return len(text) // 4
+
+
+def build_team_response_metadata(
+    result: dict,
+    team_id: int,
+    team_name: str,
+    start_time: float
+) -> dict:
+    """
+    Constrói metadata enriquecido para resposta do time
+
+    Args:
+        result: Resultado retornado pelo agent_manager
+        team_id: ID do time
+        team_name: Nome do time
+        start_time: Timestamp do início da execução
+
+    Returns:
+        Dict com metadata completo e validado
+    """
+    # Extrair agents_involved
+    agents_involved = result.get('agents_involved', [])
+
+    # Determinar agent_id e agent_name
+    agent_id = None
+    agent_name = None
+
+    if agents_involved and len(agents_involved) > 0:
+        first_agent = agents_involved[0]
+
+        # Checar se é coordenador
+        if isinstance(first_agent, str) and 'coordenador' in first_agent.lower():
+            agent_id = "Coordenador"
+            agent_name = "Coordenador"
+        else:
+            # Tentar extrair ID de formato "agent-7"
+            if isinstance(first_agent, str):
+                import re
+                match = re.match(r'agent-(\d+)', first_agent, re.IGNORECASE)
+                if match:
+                    agent_id = int(match.group(1))
+                    agent_name = first_agent
+                else:
+                    agent_id = first_agent
+                    agent_name = first_agent
+            else:
+                agent_id = first_agent
+                agent_name = str(first_agent)
+
+    # Extrair e validar tokens - SUPORTAR MÚLTIPLOS FORMATOS
+    tokens_raw = result.get('tokens', {})
+    logger.info(f"🔢 [METADATA-BUILD] Tokens raw do result: {tokens_raw}")
+
+    # Normalizar tokens
+    if isinstance(tokens_raw, dict):
+        input_tokens = (
+            tokens_raw.get('input') or
+            tokens_raw.get('input_tokens') or
+            tokens_raw.get('prompt_tokens') or
+            0
+        )
+        output_tokens = (
+            tokens_raw.get('output') or
+            tokens_raw.get('output_tokens') or
+            tokens_raw.get('completion_tokens') or
+            0
+        )
+        total_tokens = (
+            tokens_raw.get('total') or
+            tokens_raw.get('total_tokens') or
+            (input_tokens + output_tokens)
+        )
+    else:
+        input_tokens = 0
+        output_tokens = 0
+        total_tokens = 0
+
+    tokens_normalized = {
+        'input': int(input_tokens),
+        'output': int(output_tokens),
+        'total': int(total_tokens)
+    }
+
+    logger.info(f"🔢 [METADATA-BUILD] Tokens normalized: {tokens_normalized}")
+
+    # Extrair RAG sources se disponível
+    rag_used = result.get('rag_used', False)
+    rag_sources = result.get('rag_sources', [])
+
+    # Construir metadata enriquecido
+    metadata = {
+        # Execution info
+        'execution_time_ms': int((time.time() - start_time) * 1000),
+        'timestamp': datetime.now().isoformat(),
+
+        # Team info
+        'team_id': team_id,
+        'team_name': team_name,
+        'sender_type': 'team',
+
+        # Agent info
+        'agents_involved': agents_involved,
+        'agent_id': agent_id,
+        'agent_name': agent_name,
+
+        # Tokens (NORMALIZADO)
+        'tokens': tokens_normalized,
+
+        # RAG info
+        'rag': rag_used,
+        'rag_used': rag_used,
+        'rag_sources': rag_sources,
+        'rag_chunks_count': len(rag_sources) if rag_sources else 0,
+
+        # Model info
+        'model': result.get('model', 'unknown'),
+        'model_used': result.get('model', 'unknown'),
+
+        # Status
+        'success': result.get('success', False),
+        'error': result.get('error', None)
+    }
+
+    logger.info(f"✅ [METADATA-BUILD] Metadata completo construído")
+    logger.info(f"   - Agent: {agent_name} (ID: {agent_id})")
+    logger.info(f"   - Tokens: {tokens_normalized}")
+    logger.info(f"   - RAG: {rag_used}, chunks: {len(rag_sources) if rag_sources else 0}")
+    logger.info(f"   - Model: {metadata['model']}")
+
+    return metadata
+
+
 # ============================================================================
 # Times de Agentes
 # ============================================================================
@@ -304,6 +477,17 @@ async def execute_team_task(
         db: Session = Depends(get_db)
 ):
     """Executar tarefa com um time de agentes"""
+
+    # ✅ DEBUG: Log valores ANTES da normalização
+    logger.info(f"🔍 [RAW] customer_id recebido: {customer_id!r}, type: {type(customer_id)}")
+    logger.info(f"🔍 [RAW] user_id recebido: {user_id!r}, type: {type(user_id)}")
+
+    # ✅ NORMALIZAR customer_id e user_id (converter "null" string para None)
+    if customer_id == "null" or customer_id == "undefined":
+        customer_id = None
+    if user_id == "null" or user_id == "undefined":
+        user_id = None
+
     logger.info(f"🎯 RECEBIDO EXECUTE PARA TIME {team_id}")
     logger.info(f"📝 TAREFA: {task[:100]}...")
     logger.info(f"🆔 SESSION: {session_id}")
@@ -345,15 +529,26 @@ async def execute_team_task(
             )
             logger.info(f"✅ [MONGO] Sessão criada: {session_id}")
 
+        # Calcular tokens da mensagem do usuário
+        user_input_tokens = count_tokens_for_user_message(task)
+
         # Adicionar mensagem do usuário (MongoDB)
         user_metadata = {
             'sender': 'usuário',
+            'sender_type': 'user',
             'session_id': session_id,
             'team_id': team_id,
-            'user_id': user_id,  # ✅ Adicionar user_id no metadata
-            'customer_id': customer_id,  # ✅ Adicionar customer_id no metadata
+            'team_name': team.name,
+            'user_id': user_id,
+            'customer_id': customer_id,
             'timestamp': datetime.now().isoformat(),
-            'tokens': {'input': 0, 'output': 0, 'total': 0}  # ✅ Mensagem do usuário não consome tokens
+            'tokens': {
+                'input': user_input_tokens,  # ✅ Usuário gasta tokens de INPUT
+                'output': 0,                 # Usuário não gera output
+                'total': user_input_tokens
+            },
+            'success': True,
+            'model': 'user-input'
         }
 
         if mongo_chat_svc:
@@ -432,30 +627,13 @@ async def execute_team_task(
                             yield f"data: {json.dumps({'type': 'content', 'content': word_with_space, 'agent_name': agent_name})}\n\n"
                             await asyncio.sleep(0.03)  # Delay de 30ms
 
-                        # Salvar resposta do time (MongoDB)
-                        # ✅ Garantir que tokens está no formato correto
-                        tokens_data = result.get('tokens', {'input': 0, 'output': 0, 'total': 0})
-
-                        # ✅ Determinar agent_id correto
-                        agents_involved = result.get('agents_involved', [])
-                        # Se é coordenador, marcar como "Coordenador"
-                        if agents_involved and 'Coordenador' in str(agents_involved):
-                            agent_id = "Coordenador"
-                        elif agents_involved and len(agents_involved) > 0:
-                            agent_id = agents_involved[0]
-                        else:
-                            agent_id = None
-
-                        response_metadata = {
-                            'execution_time_ms': int((time.time() - start_time) * 1000),
-                            'agents_involved': agents_involved,
-                            'team_id': team_id,
-                            'sender': f"time-{team.name}",
-                            'timestamp': datetime.now().isoformat(),
-                            'rag': result.get('rag_used', False),
-                            'tokens': tokens_data,
-                            'agent_id': agent_id
-                        }
+                        # ✅ CONSTRUIR METADATA ENRIQUECIDO usando função auxiliar
+                        response_metadata = build_team_response_metadata(
+                            result=result,
+                            team_id=team_id,
+                            team_name=team.name,
+                            start_time=start_time
+                        )
 
                         if mongo_chat_svc:
                             await mongo_chat_svc.add_message_to_chat(
@@ -515,29 +693,13 @@ async def execute_team_task(
 
             # Salvar resposta do time (MongoDB)
             if result.get('success'):
-                # ✅ Garantir que tokens está no formato correto
-                tokens_data = result.get('tokens', {'input': 0, 'output': 0, 'total': 0})
-
-                # ✅ Determinar agent_id correto
-                agents_involved = result.get('agents_involved', [])
-                # Se é coordenador, marcar como "Coordenador"
-                if agents_involved and 'Coordenador' in str(agents_involved):
-                    agent_id = "Coordenador"
-                elif agents_involved and len(agents_involved) > 0:
-                    agent_id = agents_involved[0]
-                else:
-                    agent_id = None
-
-                response_metadata = {
-                    'execution_time_ms': result.get('execution_time_ms'),
-                    'agents_involved': agents_involved,
-                    'team_id': team_id,
-                    'sender': f"time-{team.name}",
-                    'timestamp': datetime.now().isoformat(),
-                    'rag': result.get('rag_used', False),
-                    'tokens': tokens_data,
-                    'agent_id': agent_id
-                }
+                # ✅ CONSTRUIR METADATA ENRIQUECIDO usando função auxiliar
+                response_metadata = build_team_response_metadata(
+                    result=result,
+                    team_id=team_id,
+                    team_name=team.name,
+                    start_time=start_time
+                )
 
                 if mongo_chat_svc:
                     await mongo_chat_svc.add_message_to_chat(

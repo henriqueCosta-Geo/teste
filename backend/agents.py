@@ -1328,6 +1328,7 @@ search("pressão sistema hidráulico", limit=3)
                 delegated_to_agent = None
                 toolcall_completed_indices = []
                 rag_used = False  # Flag para indicar se RAG foi usado
+                rag_sources = []  # ✅ Armazenar sources do RAG
 
                 for idx, event in enumerate(all_events):
                     event_type = type(event).__name__
@@ -1350,17 +1351,58 @@ search("pressão sistema hidráulico", limit=3)
                         # Detectar RAG search
                         if tool_name and 'search' in tool_name.lower():
                             rag_used = True
+                            logger.info(f"🔍 [TIME-{team_id}] RAG detectado no evento {idx}")
+
+                        # Detectar INÍCIO da delegação
+                        if tool_name and ('transfer' in tool_name.lower() or 'delegate' in tool_name.lower()):
+                            delegation_started_idx = idx
+                            logger.info(f"🎯 [TIME-{team_id}] DELEGAÇÃO INICIADA no índice {idx}")
+
+                    # ✅ CAPTURAR RAG SOURCES do ToolCallCompletedEvent
+                    if 'ToolCallCompletedEvent' in event_type:
+                        # Verificar se é uma tool de search (RAG)
+                        tool_name = None
+                        if hasattr(event, 'tool') and event.tool:
+                            tool_name = getattr(event.tool, 'tool_name', None)
+
+                        if tool_name and 'search' in tool_name.lower():
+                            # Tentar extrair result do RAG
+                            if hasattr(event, 'result') and event.result:
+                                # event.result pode ser uma lista de dicts com chunks
+                                if isinstance(event.result, list):
+                                    for item in event.result[:5]:  # Limitar a 5 sources
+                                        if isinstance(item, dict):
+                                            source = {
+                                                'collection': item.get('collection', 'unknown'),
+                                                'text': item.get('text', '')[:200],  # Primeiros 200 chars
+                                                'score': item.get('score', 0.0),
+                                                'metadata': item.get('metadata', {})
+                                            }
+                                            rag_sources.append(source)
+                                    logger.info(f"✅ [TIME-{team_id}] Capturados {len(rag_sources)} RAG sources")
+                                elif isinstance(event.result, str):
+                                    # Se result é string, apenas marcar que RAG foi usado
+                                    logger.info(f"ℹ️ [TIME-{team_id}] RAG result é string (não estruturado)")
+
+                    # Coletar todos os índices de ToolCallCompletedEvent
+                    if 'ToolCallCompletedEvent' in event_type:
+                        toolcall_completed_indices.append(idx)
+
+                        # Verificar se este completed é de uma delegação
+                        tool_name_completed = None
+                        if hasattr(event, 'tool') and event.tool:
+                            tool_name_completed = getattr(event.tool, 'tool_name', None)
 
                         # Detectar delegação (transfer_task_to_member ou delegate_task_to_member)
-                        # Aceitar ambos os nomes para compatibilidade (LLM pode usar qualquer um)
-                        if tool_name and ('transfer' in tool_name.lower() or 'delegate' in tool_name.lower()):
+                        if tool_name_completed and ('transfer' in tool_name_completed.lower() or 'delegate' in tool_name_completed.lower()):
                             delegation_detected = True
-                            delegation_started_idx = idx  # ✅ Marcar início da delegação
+                            delegation_completed_idx = idx  # Marcar FIM da delegação
+
                             # Extrair argumentos da delegação
                             tool_args = {}
                             if hasattr(event, 'tool') and hasattr(event.tool, 'tool_args'):
                                 tool_args = event.tool.tool_args
-                                # Tentar extrair agent_name (prioridade) ou member (fallback para delegate_task_to_member)
+                                # Tentar extrair agent_name
                                 if isinstance(tool_args, dict):
                                     delegated_to_agent = tool_args.get('agent_name') or tool_args.get('member') or tool_args.get('member_id')
                                 else:
@@ -1369,7 +1411,7 @@ search("pressão sistema hidráulico", limit=3)
                             # LOG COMPLETO DA TOOL CALL
                             logger.info(f"🎯 [TIME-{team_id}] DELEGAÇÃO DETECTADA no índice {idx}")
                             logger.info(f"🔍 [TOOL CALL COMPLETO]")
-                            logger.info(f"   - tool_name: {tool_name}")
+                            logger.info(f"   - tool_name: {tool_name_completed}")
                             logger.info(f"   - tool_args type: {type(tool_args)}")
                             if isinstance(tool_args, dict):
                                 import json
@@ -1388,13 +1430,8 @@ search("pressão sistema hidráulico", limit=3)
                                     expected = tool_args.get('expected_output', '')
                                     logger.info(f"   - expected_output: {expected[:100]}...")
 
-                    # Coletar todos os índices de ToolCallCompletedEvent
-                    if 'ToolCallCompletedEvent' in event_type:
-                        toolcall_completed_indices.append(idx)
-
-                # Se houve delegação, pegar o ÚLTIMO ToolCallCompletedEvent
-                if delegation_detected and toolcall_completed_indices:
-                    delegation_completed_idx = toolcall_completed_indices[-1]
+                # Log da delegação se detectada
+                if delegation_detected:
                     logger.info(f"✅ [TIME-{team_id}] Delegação: início={delegation_started_idx}, fim={delegation_completed_idx}")
 
                 # Log resumido
@@ -1621,6 +1658,28 @@ search("pressão sistema hidráulico", limit=3)
                     logger.error(traceback.format_exc())
                     # Manter zeros se falhar
 
+            # ✅ ADICIONAR TOKENS DO RAG AO TOTAL
+            if rag_used and rag_sources:
+                try:
+                    import tiktoken
+                    encoding = tiktoken.encoding_for_model("gpt-4")
+
+                    rag_tokens = 0
+                    for source in rag_sources:
+                        # Calcular tokens do texto do chunk
+                        source_text = source.get('text', '')
+                        if source_text:
+                            rag_tokens += len(encoding.encode(source_text))
+
+                    # Somar tokens do RAG ao input (são tokens consumidos como contexto)
+                    tokens_info['input'] += rag_tokens
+                    tokens_info['total'] += rag_tokens
+
+                    logger.info(f"📚 [TIME-{team_id}] Tokens do RAG: {rag_tokens} (de {len(rag_sources)} sources)")
+                    logger.info(f"📊 [TIME-{team_id}] Total atualizado: {tokens_info['total']} (input: {tokens_info['input']} + RAG, output: {tokens_info['output']})")
+                except Exception as e:
+                    logger.warning(f"⚠️ [TIME-{team_id}] Erro ao calcular tokens do RAG: {e}")
+
             logger.info(f"✅ [TIME-{team_id}] EXECUÇÃO CONCLUÍDA: {execution_time}ms")
             logger.info(f"👥 [TIME-{team_id}] AGENTES ENVOLVIDOS: {agents_involved}")
             logger.info(f"🔢 [TIME-{team_id}] TOKENS: {tokens_info['total']} (in: {tokens_info['input']}, out: {tokens_info['output']})")
@@ -1633,6 +1692,7 @@ search("pressão sistema hidráulico", limit=3)
                 'tool_calls': len(response.messages) if hasattr(response, 'messages') else 0,
                 'tokens': tokens_info,
                 'rag_used': rag_used,
+                'rag_sources': rag_sources,  # ✅ Adicionar sources do RAG
                 'timestamp': datetime.now().isoformat()
             }
 

@@ -4,6 +4,7 @@ Implementa schema proposto: Collections "chats" e "analytics"
 """
 
 import logging
+import re
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import uuid
@@ -25,6 +26,141 @@ class MongoChatService:
         if mongo_service and mongo_service.is_connected:
             self.chats_collection = mongo_service.get_chats_collection()
             self.analytics_collection = mongo_service.get_analytics_collection()
+
+    @staticmethod
+    def normalize_tokens(tokens_raw: Any) -> Dict[str, int]:
+        """
+        Normaliza dados de tokens vindos do Agno/OpenAI para formato padrão
+
+        Suporta múltiplos formatos:
+        - {'input': X, 'output': Y, 'total': Z}
+        - {'input_tokens': X, 'output_tokens': Y, 'total_tokens': Z}
+        - {'prompt_tokens': X, 'completion_tokens': Y, 'total_tokens': Z}
+
+        Returns:
+            Dict com formato padronizado: {'input': int, 'output': int, 'total': int}
+        """
+        if not tokens_raw or not isinstance(tokens_raw, dict):
+            logger.warning(f"⚠️ [TOKENS] Formato inválido recebido: {tokens_raw}")
+            return {'input': 0, 'output': 0, 'total': 0}
+
+        # Log do formato bruto recebido
+        logger.info(f"🔢 [TOKENS-DEBUG] Raw recebido: {tokens_raw}")
+
+        # Tentar extrair valores em diferentes formatos
+        input_tokens = (
+            tokens_raw.get('input') or
+            tokens_raw.get('input_tokens') or
+            tokens_raw.get('prompt_tokens') or
+            0
+        )
+
+        output_tokens = (
+            tokens_raw.get('output') or
+            tokens_raw.get('output_tokens') or
+            tokens_raw.get('completion_tokens') or
+            0
+        )
+
+        total_tokens = tokens_raw.get('total') or tokens_raw.get('total_tokens') or 0
+
+        # Se total não veio, calcular
+        if total_tokens == 0 and (input_tokens > 0 or output_tokens > 0):
+            total_tokens = input_tokens + output_tokens
+
+        normalized = {
+            'input': int(input_tokens),
+            'output': int(output_tokens),
+            'total': int(total_tokens)
+        }
+
+        logger.info(f"🔢 [TOKENS-DEBUG] Normalizado: {normalized}")
+
+        return normalized
+
+    @staticmethod
+    def extract_agent_id(agent_identifier: Any) -> Any:
+        """
+        Extrai ID numérico ou nome do agente de diferentes formatos
+
+        Converte:
+        - 'agent-7' -> 7
+        - 7 -> 7
+        - 'Coordenador' -> 'Coordenador'
+        - 'coordenador' -> 'Coordenador'
+
+        Returns:
+            int (ID do agente) ou str ('Coordenador')
+        """
+        if agent_identifier is None:
+            return None
+
+        # Já é int
+        if isinstance(agent_identifier, int):
+            return agent_identifier
+
+        # É string
+        if isinstance(agent_identifier, str):
+            # Coordenador (case insensitive)
+            if agent_identifier.lower() == "coordenador":
+                return "Coordenador"
+
+            # Formato "agent-7" ou "agent-ID"
+            match = re.match(r'agent-(\d+)', agent_identifier, re.IGNORECASE)
+            if match:
+                return int(match.group(1))
+
+            # Tentar converter direto para int
+            try:
+                return int(agent_identifier)
+            except ValueError:
+                pass
+
+        # Retornar como está se não conseguir processar
+        logger.warning(f"⚠️ [AGENT-ID] Formato não reconhecido: {agent_identifier}")
+        return agent_identifier
+
+    def validate_and_enrich_metadata(self, metadata: Optional[Dict], message_type: str) -> Dict:
+        """
+        Valida e enriquece metadata antes de salvar no MongoDB
+
+        Args:
+            metadata: Metadata bruto recebido
+            message_type: Tipo da mensagem ('user', 'agent', 'team')
+
+        Returns:
+            Dict com metadata validado e normalizado
+        """
+        if not metadata:
+            metadata = {}
+
+        # Normalizar tokens
+        tokens_raw = metadata.get('tokens', {})
+        normalized_tokens = self.normalize_tokens(tokens_raw)
+
+        # Extrair e normalizar agent_id
+        agent_id_raw = metadata.get('agent_id')
+        if not agent_id_raw and message_type in ['team', 'agent']:
+            # Tentar pegar de agents_involved
+            agents_involved = metadata.get('agents_involved', [])
+            if agents_involved and len(agents_involved) > 0:
+                agent_id_raw = agents_involved[0]
+
+        agent_id = self.extract_agent_id(agent_id_raw) if agent_id_raw else None
+
+        # Construir metadata enriquecido
+        enriched = {
+            **metadata,
+            'tokens_normalized': normalized_tokens,
+            'agent_id_normalized': agent_id,
+            'validated_at': datetime.utcnow().isoformat()
+        }
+
+        logger.info(f"✅ [VALIDATION] Metadata enriquecido para {message_type}")
+        logger.info(f"   - Tokens: {normalized_tokens}")
+        logger.info(f"   - Agent ID: {agent_id}")
+
+        return enriched
 
     async def save_chat_session(
         self,
@@ -94,97 +230,90 @@ class MongoChatService:
 
             logger.info(f"✅ [MONGO-DEBUG] Chat {chat_id} encontrado no MongoDB")
 
-            # Extrair informações do metadata
-            rag_used = metadata.get("rag", False) if metadata else False
+            # ✅ VALIDAR E ENRIQUECER METADATA
+            enriched_metadata = self.validate_and_enrich_metadata(metadata, message_type)
 
-            # ✅ CORRIGIR user_assistant_id:
-            # - Para mensagens do USER: pegar user_id ou customer_id do metadata
-            # - Para mensagens do TEAM/AGENT: pegar agent_id dos agents_involved ou agent_id direto
-            # - Para coordenador: usar "Coordenador"
+            # Extrair valores normalizados
+            tokens_normalized = enriched_metadata.get('tokens_normalized', {'input': 0, 'output': 0, 'total': 0})
+            agent_id_normalized = enriched_metadata.get('agent_id_normalized')
+
+            # user_assistant_id para diferentes tipos de mensagem
             user_assistant_id = None
             if message_type == "user":
                 user_assistant_id = metadata.get("user_id") or metadata.get("customer_id") if metadata else None
             elif message_type in ["team", "agent"]:
-                # Tentar pegar agent_id do metadata
-                if metadata:
-                    # Se tem agents_involved (lista), pegar o primeiro
-                    agents_involved = metadata.get("agents_involved", [])
-                    if agents_involved and len(agents_involved) > 0:
-                        user_assistant_id = agents_involved[0]
-                    # Se não, tentar pegar agent_id direto
-                    elif metadata.get("agent_id"):
-                        user_assistant_id = metadata.get("agent_id")
-                    # Se a mensagem é do coordenador (sender contém "coordenador")
-                    elif "coordenador" in str(metadata.get("sender", "")).lower():
-                        user_assistant_id = "Coordenador"
+                user_assistant_id = agent_id_normalized
 
-            # ✅ CORRIGIR tokens: pegar 'total' do objeto tokens, não somar input+output
-            tokens = metadata.get("tokens", {}) if metadata else {}
-            token_total = tokens.get("total", 0)
+            # Extrair informações adicionais do metadata
+            rag_used = metadata.get("rag", False) if metadata else False
+            rag_sources = metadata.get("rag_sources", []) if metadata else []
+            model_used = metadata.get("model", metadata.get("model_used", "unknown")) if metadata else "unknown"
+            execution_time_ms = metadata.get("execution_time_ms", 0) if metadata else 0
+            success = metadata.get("success", True) if metadata else True
+            error = metadata.get("error", None) if metadata else None
+            agent_name = metadata.get("agent_name", None) if metadata else None
+            team_id = metadata.get("team_id", None) if metadata else None
+            team_name = metadata.get("team_name", None) if metadata else None
 
-            # Se total não veio, calcular a partir de input+output
-            if token_total == 0:
-                input_tokens = tokens.get("input", 0)
-                output_tokens = tokens.get("output", 0)
-                token_total = input_tokens + output_tokens
-            else:
-                # Se total veio, usar os valores de input/output se existirem
-                input_tokens = tokens.get("input", 0)
-                output_tokens = tokens.get("output", 0)
-
-            # Criar documento de mensagem
+            # Criar documento de mensagem COMPLETO
             message_document = {
                 "mensagem_id": str(uuid.uuid4()),
-                "rag": rag_used,
+                "message_type": message_type,
+                "mensagem": content,
+
+                # User/Agent identification
                 "user_assistant_id": user_assistant_id,
-                "message_type": message_type,  # 'user', 'agent', 'team'
-                "feedback": None,  # Será preenchido quando houver feedback
-                "mensagem": content[:100] + "..." if len(content) > 100 else content,  # Resumir para log
-                "token_total": token_total,
+                "agent_name": agent_name,
+
+                # Team info
+                "team_id": team_id,
+                "team_name": team_name,
+
+                # Tokens
+                "token_total": tokens_normalized['total'],
                 "tokens": {
-                    "input": input_tokens,
-                    "output": output_tokens
+                    "input": tokens_normalized['input'],
+                    "output": tokens_normalized['output']
                 },
+
+                # RAG info
+                "rag": rag_used,
+                "rag_sources": rag_sources[:5] if rag_sources else [],  # Limitar a 5 sources
+                "rag_chunks_count": len(rag_sources) if rag_sources else 0,
+
+                # Model & Performance
+                "model_used": model_used,
+                "execution_time_ms": execution_time_ms,
+
+                # Status
+                "success": success,
+                "error": error,
+
+                # Feedback (será preenchido depois)
+                "feedback": None,
+
+                # Timestamps
                 "created_at": datetime.utcnow()
             }
 
             # Log do documento sendo inserido (resumido)
-            logger.info(f"📄 [MONGO-DEBUG] Documento a inserir:")
+            logger.info(f"📄 [MONGO-SAVE] Documento a inserir:")
             logger.info(f"   - mensagem_id: {message_document['mensagem_id']}")
             logger.info(f"   - message_type: {message_type}")
             logger.info(f"   - content length: {len(content)} chars")
-
-            # ✅ LOGGING DETALHADO para debug
-            logger.info(f"📊 [MONGO-TOKENS] Salvando mensagem:")
-            logger.info(f"   - Type: {message_type}")
             logger.info(f"   - user_assistant_id: {user_assistant_id}")
-            logger.info(f"   - token_total: {token_total}")
-            logger.info(f"   - input_tokens: {input_tokens}")
-            logger.info(f"   - output_tokens: {output_tokens}")
-            logger.info(f"   - rag_used: {rag_used}")
-            logger.info(f"   - metadata recebido: {metadata}")
-
-            # Criar documento REAL (sem truncar conteúdo)
-            message_document_real = {
-                "mensagem_id": message_document["mensagem_id"],
-                "rag": rag_used,
-                "user_assistant_id": user_assistant_id,
-                "message_type": message_type,
-                "feedback": None,
-                "mensagem": content,  # Conteúdo completo
-                "token_total": token_total,
-                "tokens": {
-                    "input": input_tokens,
-                    "output": output_tokens
-                },
-                "created_at": datetime.utcnow()
-            }
+            logger.info(f"   - agent_name: {agent_name}")
+            logger.info(f"   - tokens: {tokens_normalized}")
+            logger.info(f"   - model: {model_used}")
+            logger.info(f"   - rag_used: {rag_used}, chunks: {len(rag_sources)}")
+            logger.info(f"   - execution_time_ms: {execution_time_ms}")
+            logger.info(f"   - success: {success}")
 
             # Adicionar mensagem ao array
             logger.info(f"⏳ [MONGO-DEBUG] Executando update_one...")
             result = await self.chats_collection.update_one(
                 {"chat_id": chat_id},
-                {"$push": {"mensagens": message_document_real}}
+                {"$push": {"mensagens": message_document}}
             )
 
             logger.info(f"📊 [MONGO-DEBUG] Resultado:")

@@ -1,0 +1,64 @@
+/**
+ * API Client para Dashboard de Administração
+ */
+
+import type { DashboardData } from './admin-types'
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+export const adminAPI = {
+  /**
+   * Obter dados do dashboard para um customer específico
+   */
+  async getDashboard(
+    customerId: number,
+    daysBack: number = 30
+  ): Promise<DashboardData> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/admin/dashboard/${customerId}?days_back=${daysBack}`,
+      {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error('Acesso negado. Você não tem permissão para visualizar este dashboard.')
+      }
+      if (response.status === 404) {
+        throw new Error('Customer não encontrado.')
+      }
+      throw new Error('Erro ao carregar dashboard')
+    }
+
+    return response.json()
+  },
+
+  /**
+   * Exportar dados do dashboard em JSON
+   */
+  async exportDashboardJSON(customerId: number, daysBack: number = 30): Promise<Blob> {
+    const data = await this.getDashboard(customerId, daysBack)
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: 'application/json',
+    })
+    return blob
+  },
+
+  /**
+   * Baixar export de dados
+   */
+  downloadExport(blob: Blob, filename: string) {
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  },
+}

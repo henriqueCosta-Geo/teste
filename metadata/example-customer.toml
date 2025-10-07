@@ -11,6 +11,7 @@ has_history = true
 max_messages = 200
 default_agent = "customer-assistant"
 welcome_message = "Olá! Como posso ajudar você hoje?"
+quick_replies = ["CH570", "CH670", "CH950", "A9000", "A8000", "A8810"]
 
 # Recursos habilitados
 [features]

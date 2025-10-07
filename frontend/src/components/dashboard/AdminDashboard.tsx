@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Database, Bot, FileText, Search, Plus, ArrowRight, Activity, Users, MessageCircle } from 'lucide-react'
+import { Database, Bot, FileText, Search, Plus, ArrowRight, Activity, Users, MessageCircle, BarChart3 } from 'lucide-react'
 import { collectionsAPI, agentsAPI } from '@/lib/api'
 import { useUserMetadata } from '@/hooks/useUserMetadata'
 import type { Collection, Agent } from '@/lib/types'
@@ -136,38 +136,42 @@ export default function AdminDashboard() {
     <div className="space-y-6" style={{ '--primary-color': primaryColor } as any}>
       {/* Header com branding customizado */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
-          {customerName} Dashboard
-        </h1>
-        <p style={{ color: 'var(--text-secondary)' }}>
-          {metadata?.chat?.welcome_message || 'Gerencie recursos e converse com agentes IA'}
-        </p>
-      </div>
-
-      {/* Quick Chat Access */}
-      <div className="card bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-              💬 Iniciar Conversa
-            </h2>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {metadata?.chat?.default_agent
-                ? `Converse com o agente ${metadata.chat.default_agent}`
-                : metadata?.chat?.default_team
-                ? `Converse com o time ${metadata.chat.default_team}`
-                : 'Busque informações na base de conhecimento'
-              }
+            <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+              {customerName} Dashboard
+            </h1>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              {metadata?.chat?.welcome_message || 'Gerencie recursos e converse com agentes IA'}
             </p>
           </div>
-          <Link
-            href={defaultChatLink}
-            className="btn-primary"
-          >
-            <MessageCircle size={16} />
-            Iniciar Chat
-          </Link>
         </div>
+
+        {/* Botão Destaque para Iniciar Chat */}
+        <Link
+          href={defaultChatLink}
+          className="card bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-6 hover:shadow-lg transition-shadow"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-600 rounded-full">
+                <MessageCircle className="h-8 w-8 text-white" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
+                  💬 Iniciar Conversa com IA
+                </h2>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  Converse com nossos agentes especializados para suporte técnico
+                </p>
+              </div>
+            </div>
+            <div className="btn-primary">
+              Iniciar Chat
+              <ArrowRight size={20} />
+            </div>
+          </div>
+        </Link>
       </div>
 
       {/* Stats Cards */}
