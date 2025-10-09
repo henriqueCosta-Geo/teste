@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 export async function GET(request: NextRequest) {
   try {
     const urls = [
-      'http://localhost:8000',
+      process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
       'http://backend:8000',
       'http://qdrant_admin_backend:8000'
     ]

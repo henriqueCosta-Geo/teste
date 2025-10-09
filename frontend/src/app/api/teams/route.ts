@@ -12,7 +12,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Buscar todos os teams disponíveis (relacionamento agora é via TOML)
+    console.log('🔍 [TEAMS-API] Listando todos os teams ativos')
+
+    // Retornar todos os teams ativos (não filtramos por customer pois teams são compartilhados)
     const teams = await prisma.agentTeams.findMany({
       where: {
         is_active: true
@@ -36,6 +38,8 @@ export async function GET(request: NextRequest) {
         }
       }
     })
+
+    console.log(`   - Total de teams encontrados: ${teams.length}`)
 
     return NextResponse.json(teams)
 

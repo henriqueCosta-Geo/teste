@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { Send, Users, User, ArrowLeft, Loader, Crown, ArrowDown, Bot } from 'lucide-react'
 import { teamsAPI } from '@/lib/api'
@@ -41,6 +41,7 @@ interface Team {
 export default function TeamChatPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { data: session } = useSession()
   const [team, setTeam] = useState<Team | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -52,6 +53,9 @@ export default function TeamChatPage() {
   const [streamingMessage, setStreamingMessage] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [showScrollButton, setShowScrollButton] = useState(false)
+
+  // Obter customerId da query string (quando admin acessa via dashboard)
+  const customerIdFromQuery = searchParams.get('customerId')
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -200,12 +204,19 @@ export default function TeamChatPage() {
       let finalResponse = ''
       let agentName = 'Time'
 
+      // Determinar customer_id: priorizar query string (admin), fallback para session (regular user)
+      const customerId = customerIdFromQuery
+        ? parseInt(customerIdFromQuery)
+        : session?.user?.customer_id
+
+      console.log('🔍 [CUSTOMER-ID] Query:', customerIdFromQuery, 'Session:', session?.user?.customer_id, 'Final:', customerId)
+
       const response = teamsAPI.executeStream(teamId, {
         task: userMessage.content.trim(),
         session_id: sessionId,
         stream: true,
         user_id: session?.user?.id ? parseInt(session.user.id) : undefined,
-        customer_id: session?.user?.customer_id
+        customer_id: customerId
       })
 
       for await (const chunk of response) {
@@ -327,7 +338,7 @@ export default function TeamChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="flex flex-col h-full bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Header FIXO */}
       <div className="bg-white border-b border-gray-200 shadow-sm flex-shrink-0">
         <div className="w-full px-3 sm:px-4 md:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">

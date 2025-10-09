@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { Download, RefreshCw, Calendar, MessageCircle } from 'lucide-react'
 import Link from 'next/link'
 import { adminAPI } from '@/lib/admin-api'
+import { teamsAPI } from '@/lib/api'
 import type { DashboardData, DashboardFilters } from '@/lib/admin-types'
 
 import DashboardFiltersComponent from './DashboardFilters'
@@ -19,12 +21,21 @@ interface CustomerDashboardProps {
 }
 
 export default function CustomerDashboard({ customerId }: CustomerDashboardProps) {
+  const { data: session } = useSession()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [customerTeamId, setCustomerTeamId] = useState<number | null>(null)
   const [filters, setFilters] = useState<DashboardFilters>({
     period: '30d'
   })
+
+  // Se for ADMIN, usar o customer_id da sessão ao invés do parâmetro
+  const effectiveCustomerId = session?.user?.role === 'ADMIN'
+    ? session.user.customer_id
+    : customerId
+
+  console.log('🔍 [CustomerDashboard] customerId param:', customerId, 'session customer:', session?.user?.customer_id, 'effective:', effectiveCustomerId)
 
   const loadDashboard = async () => {
     try {
@@ -32,7 +43,7 @@ export default function CustomerDashboard({ customerId }: CustomerDashboardProps
       setError(null)
 
       const daysBack = getPeriodDays(filters.period)
-      const dashboardData = await adminAPI.getDashboard(customerId, daysBack)
+      const dashboardData = await adminAPI.getDashboard(effectiveCustomerId, daysBack)
       setData(dashboardData)
     } catch (err) {
       console.error('Erro ao carregar dashboard:', err)
@@ -55,8 +66,8 @@ export default function CustomerDashboard({ customerId }: CustomerDashboardProps
   const handleExportJSON = async () => {
     try {
       const daysBack = getPeriodDays(filters.period)
-      const blob = await adminAPI.exportDashboardJSON(customerId, daysBack)
-      const filename = `dashboard-customer-${customerId}-${new Date().toISOString().split('T')[0]}.json`
+      const blob = await adminAPI.exportDashboardJSON(effectiveCustomerId, daysBack)
+      const filename = `dashboard-customer-${effectiveCustomerId}-${new Date().toISOString().split('T')[0]}.json`
       adminAPI.downloadExport(blob, filename)
     } catch (err) {
       console.error('Erro ao exportar:', err)
@@ -64,8 +75,80 @@ export default function CustomerDashboard({ customerId }: CustomerDashboardProps
     }
   }
 
+  const loadCustomerTeam = async () => {
+    try {
+      console.log('🔍 [CustomerDashboard] Carregando team para customer:', effectiveCustomerId)
+
+      // Usar a API de customers (lista todos) e filtrar pelo ID
+      const customersResponse = await fetch(`/api/admin/customers`)
+      if (!customersResponse.ok) {
+        console.error('   ❌ Erro ao carregar lista de customers')
+        return
+      }
+
+      const customers = await customersResponse.json()
+      const customer = customers.find((c: any) => c.id === effectiveCustomerId)
+
+      if (!customer) {
+        console.error('   ❌ Customer não encontrado na lista')
+        console.error(`   Buscando ID: ${effectiveCustomerId}, disponíveis:`, customers.map((c: any) => c.id))
+        return
+      }
+
+      console.log('   - Customer:', customer.name, 'slug:', customer.slug)
+
+      // Buscar metadata TOML parseado usando o slug
+      const metadataResponse = await fetch(`/api/customer-metadata/${customer.slug}`)
+      if (!metadataResponse.ok) {
+        console.error('   ❌ Erro ao carregar metadata parseado')
+        return
+      }
+
+      const metadata = await metadataResponse.json()
+      console.log('   - Metadata parseado:', metadata)
+
+      // Pegar default_team do metadata (pode ser ID ou NOME)
+      const defaultTeam = metadata?.chat?.default_team
+
+      if (!defaultTeam) {
+        console.warn(`   ⚠️ default_team não definido no metadata do customer ${effectiveCustomerId}`)
+        return
+      }
+
+      // Verificar se é número (ID) ou string (NOME)
+      if (typeof defaultTeam === 'number' || !isNaN(Number(defaultTeam))) {
+        // É um ID numérico
+        setCustomerTeamId(Number(defaultTeam))
+        console.log(`   ✅ Team do metadata (ID): ${defaultTeam}`)
+      } else {
+        // É um nome, precisamos buscar o ID
+        console.log(`   🔍 default_team é um nome: "${defaultTeam}", buscando ID...`)
+
+        const teamsResponse = await fetch('/api/teams')
+        if (!teamsResponse.ok) {
+          console.error('   ❌ Erro ao buscar lista de teams')
+          return
+        }
+
+        const teams = await teamsResponse.json()
+        const team = teams.find((t: any) => t.name === defaultTeam)
+
+        if (team) {
+          setCustomerTeamId(team.id)
+          console.log(`   ✅ Team encontrado: "${team.name}" → ID ${team.id}`)
+        } else {
+          console.error(`   ❌ Team "${defaultTeam}" não encontrado`)
+          console.error(`   Teams disponíveis:`, teams.map((t: any) => t.name))
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao carregar team do customer:', err)
+    }
+  }
+
   useEffect(() => {
     loadDashboard()
+    loadCustomerTeam()
   }, [customerId, filters.period])
 
   if (loading) {
@@ -111,10 +194,17 @@ export default function CustomerDashboard({ customerId }: CustomerDashboardProps
         </div>
 
         <div className="flex gap-2">
-          <Link href="/teams/8/chat" className="btn-primary flex items-center gap-2">
-            <MessageCircle size={20} />
-            Iniciar Chat
-          </Link>
+          {customerTeamId ? (
+            <Link href={`/teams/${customerTeamId}/chat?customerId=${effectiveCustomerId}`} className="btn-primary flex items-center gap-2">
+              <MessageCircle size={20} />
+              Iniciar Chat
+            </Link>
+          ) : (
+            <button disabled className="btn-primary opacity-50 cursor-not-allowed flex items-center gap-2">
+              <MessageCircle size={20} />
+              Carregando...
+            </button>
+          )}
           <button onClick={loadDashboard} className="btn-outline" title="Atualizar">
             <RefreshCw size={16} />
           </button>

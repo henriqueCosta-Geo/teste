@@ -36,6 +36,10 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    console.log(`📋 [CUSTOMERS-API] User role: ${session.user.role}, Customer ID: ${session.user.customer_id}`)
+    console.log(`📋 [CUSTOMERS-API] Total customers found: ${customers.length}`)
+    console.log(`📋 [CUSTOMERS-API] Customer IDs: ${customers.map(c => c.id).join(', ')}`)
+
     // Transformar dados para o formato esperado pelo frontend
     const customersResponse = customers.map(customer => ({
       id: customer.id,

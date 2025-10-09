@@ -1,10 +1,9 @@
 /**
  * API Client para Dashboard de Administração
+ * Usa proxy Next.js para evitar problemas de CORS
  */
 
 import type { DashboardData } from './admin-types'
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export const adminAPI = {
   /**
@@ -15,7 +14,7 @@ export const adminAPI = {
     daysBack: number = 30
   ): Promise<DashboardData> {
     const response = await fetch(
-      `${API_BASE_URL}/api/admin/dashboard/${customerId}?days_back=${daysBack}`,
+      `/api/proxy/api/admin/dashboard/${customerId}?days_back=${daysBack}`,
       {
         credentials: 'include',
         headers: {

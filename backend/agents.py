@@ -1020,40 +1020,106 @@ Você tem acesso a {len(agent_collections)} base(s) de conhecimento:
 3. ✅ Dúvidas sobre **códigos de erro** ou diagnósticos
 4. ✅ Informações que exigem **precisão numérica** (pressões, temperaturas, torques)
 5. ✅ Referências a **manuais ou documentação** específica
+6. ✅ Respostas de sim e não ao que você perguntou.
 
 **Quando NÃO buscar:**
 1. ❌ Perguntas que você **já sabe responder** com conhecimento geral
 2. ❌ Conversação **casual ou esclarecimentos** simples
-3. ❌ Confirmações ou **perguntas de acompanhamento** sobre info já fornecida
 4. ❌ Saudações, agradecimentos, ou interações **não técnicas**
 
-### 💡 Exemplo de Uso
+### 🎯 COMO FORMULAR QUERIES EFICAZES
 
-**BOM uso de busca:**
+**Técnicas para criar buscas de alta qualidade:**
+
+1. **Seja ESPECÍFICO sobre o componente:**
+   - Inclua o nome técnico completo do componente/sistema
+   - Use termos da documentação técnica
+
+2. **Adicione CONTEXTO do problema:**
+   - Descreva o tipo de informação buscada (especificações, diagnóstico, procedimento)
+   - Inclua sintomas ou comportamentos relevantes
+
+3. **Use TERMOS TÉCNICOS corretos:**
+   - Prefira linguagem técnica da documentação
+   - Evite gírias ou termos coloquiais
+
+4. **Mantenha comprimento ADEQUADO:**
+   - Ideal: 5-15 palavras
+   - Evite queries muito curtas (< 3 palavras) ou muito longas (> 20 palavras)
+
+### 💡 Exemplos de Queries - BOM vs RUIM
+
+**❌ RUIM - Muito vaga:**
 ```python
-# Usuário: "Qual a pressão correta do sistema hidráulico?"
-search("pressão sistema hidráulico", limit=3)
+search("pistão")  # Falta contexto e especificidade
 ```
 
-**NÃO precisa buscar:**
+**✅ BOM - Específica e contextualizada:**
 ```python
-# Usuário: "Obrigado pela ajuda!"
-# Resposta direta: "Por nada! Estou aqui se precisar de mais alguma coisa."
+search("especificações técnicas pistão hidráulico diâmetro pressão operacional")
 ```
 
-### 🎯 Dicas para Buscas Eficientes
+**❌ RUIM - Termos coloquiais:**
+```python
+search("máquina dando problema")  # Linguagem imprecisa
+```
 
-1. **Use termos específicos**: "pressão hidráulico" > "informações gerais"
-2. **Limite resultados**: use limit=3 para evitar excesso de informação
-3. **Refine se necessário**: se primeira busca não trouxer resultados, tente termos diferentes
+**✅ BOM - Termos técnicos:**
+```python
+search("diagnóstico falha sistema hidráulico oscilação operação")
+```
+
+**❌ RUIM - Pergunta completa:**
+```python
+search("Como eu faço para calibrar a pressão do sistema hidráulico?")  # Muito longa
+```
+
+**✅ BOM - Keywords relevantes:**
+```python
+search("procedimento calibração pressão sistema hidráulico")
+```
+
+### 🔄 REFINAMENTO DE BUSCA
+
+**Se a primeira busca não retornar resultados relevantes (score < 0.7):**
+
+1. **Reformule com SINÔNIMOS técnicos:**
+   - pistão → cilindro → êmbolo hidráulico
+   - oscilação → vibração → instabilidade
+   - falha → defeito → mau funcionamento
+
+2. **Use técnica de GENERALIZAÇÃO (do específico para o geral):**
+   - Nível 1: "pistão frontal esquerdo modelo XYZ"
+   - Nível 2: "sistema pistões hidráulicos modelo XYZ"
+   - Nível 3: "sistema hidráulico colheitadeira"
+
+3. **Ou técnica de ESPECIALIZAÇÃO (do geral para o específico):**
+   - Nível 1: "sistema hidráulico"
+   - Nível 2: "sistema pistões hidráulicos"
+   - Nível 3: "pistão frontal calibração pressão"
+
+4. **Tente MÚLTIPLAS QUERIES complementares:**
+   - Query 1: Componente específico → "especificações pistão hidráulico"
+   - Query 2: Sistema geral → "diagnóstico sistema hidráulico"
+   - Query 3: Procedimento → "procedimento manutenção pistões"
+
+### 📋 GLOSSÁRIO DE TERMOS
+
+**Traduza termos coloquiais para técnicos:**
+- "dando coice" → oscilação hidráulica, cavitação
+- "não funciona" → falha operacional, indisponibilidade
+- "fazendo barulho" → ruído anormal, vibração excessiva
+- "perdendo força" → perda de pressão, vazamento hidráulico
+- "travando" → travamento mecânico, bloqueio sistema
 
 ---
 
 **IMPORTANTE:**
 - Busque nas bases **apenas quando realmente necessário**
-- Sempre **cite a fonte** quando usar informações das bases
+- Sempre **cite a fonte** quando usar informações das bases (ex: "Segundo o manual técnico...")
 - Se não encontrar nas bases, responda com seu conhecimento geral
-- Não force buscas para perguntas que você já sabe responder
+- Se score dos resultados < 0.6, indique que a informação pode não ser precisa
+- Use múltiplas queries complementares para problemas complexos
 """
 
         return base_instructions + rag_instructions
@@ -1272,6 +1338,30 @@ search("pressão sistema hidráulico", limit=3)
 
             logger.info(f"📏 [TIME-{team_id}] CONTEXTO GERADO: {len(team_context)} caracteres")
             logger.info(f"👥 [TIME-{team_id}] MEMBROS: {[m['name'] for m in team_members]}")
+
+            # ✅ CALCULAR TOKENS DE CONTEXTO EXTRA (antes da execução)
+            context_tokens = 0
+            instructions_tokens = 0
+            try:
+                import tiktoken
+                encoding = tiktoken.encoding_for_model("gpt-4")
+
+                # Tokens do contexto do team (mapeamentos, instruções do coordenador)
+                context_tokens = len(encoding.encode(team_context))
+                logger.info(f"📝 [TIME-{team_id}] Tokens do team_context: {context_tokens}")
+
+                # Tokens das instruções RAG de cada membro
+                for member in team_members:
+                    member_collections = self.get_agent_collections(member['id'])
+                    if member_collections:
+                        enhanced_instructions = self._build_agent_instructions(member, member_collections)
+                        instructions_tokens += len(encoding.encode(enhanced_instructions))
+
+                logger.info(f"📚 [TIME-{team_id}] Tokens das instruções RAG dos membros: {instructions_tokens}")
+            except Exception as e:
+                logger.warning(f"⚠️ [TIME-{team_id}] Erro ao calcular tokens extras: {e}")
+                context_tokens = 0
+                instructions_tokens = 0
 
             # ✅ EXECUÇÃO DIRETA - AGNO DECIDE TUDO
             # Passar session_id para cache correto
@@ -1563,6 +1653,11 @@ search("pressão sistema hidráulico", limit=3)
                 delegated_agent_name=delegated_to_agent if delegation_detected else None
             )
 
+            # ✅ DETECTAR NÚMERO DE CHAMADAS LLM
+            # Se mais de 1 agente envolvido = houve delegação = 2 chamadas (coordenador + especialista)
+            num_llm_calls = len(agents_involved) if len(agents_involved) > 1 else 1
+            logger.info(f"🔢 [TIME-{team_id}] Número de chamadas LLM detectadas: {num_llm_calls}")
+
             # Extrair tokens do response (se disponível)
             tokens_info = {
                 'input': 0,
@@ -1680,9 +1775,31 @@ search("pressão sistema hidráulico", limit=3)
                 except Exception as e:
                     logger.warning(f"⚠️ [TIME-{team_id}] Erro ao calcular tokens do RAG: {e}")
 
+            # ✅ ADICIONAR TOKENS DE CONTEXTO EXTRA (calculados antes da execução)
+            if context_tokens > 0:
+                tokens_info['input'] += context_tokens
+                tokens_info['total'] += context_tokens
+                logger.info(f"📝 [TIME-{team_id}] Tokens de contexto team adicionados: {context_tokens}")
+
+            if instructions_tokens > 0:
+                tokens_info['input'] += instructions_tokens
+                tokens_info['total'] += instructions_tokens
+                logger.info(f"📚 [TIME-{team_id}] Tokens de instruções RAG adicionados: {instructions_tokens}")
+
+            # ✅ LOG DETALHADO DE BREAKDOWN DE TOKENS
+            rag_tokens_calc = sum([len(tiktoken.encoding_for_model("gpt-4").encode(s.get('text', ''))) for s in rag_sources]) if rag_sources else 0
+            base_input = tokens_info['input'] - rag_tokens_calc - context_tokens - instructions_tokens
+
             logger.info(f"✅ [TIME-{team_id}] EXECUÇÃO CONCLUÍDA: {execution_time}ms")
             logger.info(f"👥 [TIME-{team_id}] AGENTES ENVOLVIDOS: {agents_involved}")
-            logger.info(f"🔢 [TIME-{team_id}] TOKENS: {tokens_info['total']} (in: {tokens_info['input']}, out: {tokens_info['output']})")
+            logger.info(f"🔢 [TIME-{team_id}] TOKENS TOTAL: {tokens_info['total']}")
+            logger.info(f"📊 [TIME-{team_id}] BREAKDOWN DETALHADO:")
+            logger.info(f"   ├─ Input base (task + histórico): {base_input}")
+            logger.info(f"   ├─ Contexto team (coordenador): {context_tokens}")
+            logger.info(f"   ├─ Instruções RAG (membros): {instructions_tokens}")
+            logger.info(f"   ├─ RAG chunks: {rag_tokens_calc}")
+            logger.info(f"   ├─ Output (resposta): {tokens_info['output']}")
+            logger.info(f"   └─ Chamadas LLM: {num_llm_calls}")
 
             return {
                 'success': True,
@@ -1691,6 +1808,15 @@ search("pressão sistema hidráulico", limit=3)
                 'execution_time_ms': execution_time,
                 'tool_calls': len(response.messages) if hasattr(response, 'messages') else 0,
                 'tokens': tokens_info,
+                'tokens_extra': {  # ✅ NOVO: Breakdown detalhado de tokens
+                    'base_input': base_input,
+                    'context_tokens': context_tokens,
+                    'instructions_tokens': instructions_tokens,
+                    'rag_tokens': rag_tokens_calc,
+                    'output_tokens': tokens_info['output'],
+                    'num_llm_calls': num_llm_calls,
+                    'estimated_total': tokens_info['total']
+                },
                 'rag_used': rag_used,
                 'rag_sources': rag_sources,  # ✅ Adicionar sources do RAG
                 'timestamp': datetime.now().isoformat()

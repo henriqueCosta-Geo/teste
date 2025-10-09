@@ -23,8 +23,8 @@ class MongoService:
         # Configurações do .env
         self.mongo_url = os.getenv("MONGODB_URL")
         self.database_name = os.getenv("MONGODB_DATABASE", "IntelliPro")
-        self.collection_chats = os.getenv("MONGODB_COLLECTION_CHATS", "chats")
-        self.collection_analytics = os.getenv("MONGODB_COLLECTION_ANALYTICS", "analytics")
+        self.collection_chats = os.getenv("MONGODB_COLLECTION_CHATS", "Chats")
+        self.collection_analytics = os.getenv("MONGODB_COLLECTION_ANALYTICS", "Analytics")
 
         logger.info(f"📦 MongoService configurado:")
         logger.info(f"   - Database: {self.database_name}")

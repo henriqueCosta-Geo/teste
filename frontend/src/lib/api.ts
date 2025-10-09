@@ -306,7 +306,8 @@ export const teamsAPI = {
 
   list: async (): Promise<any[]> => {
     console.log('API: Listando times')
-    const response = await fetchWithTimeout(`/api/proxy/api/teams/`)
+
+    const response = await fetchWithTimeout(`/api/teams`)
     const data = await handleResponse(response)
     console.log('API: Times recebidos:', data)
     return Array.isArray(data) ? data : []
@@ -322,7 +323,7 @@ export const teamsAPI = {
 
   get: async (id: number): Promise<any> => {
     console.log('API: Buscando time ID:', id)
-    const response = await fetchWithTimeout(`/api/proxy/api/teams/${id}`)
+    const response = await fetchWithTimeout(`/api/teams/${id}`)
     const data = await handleResponse(response)
     console.log('API: Time recebido:', data)
     return data

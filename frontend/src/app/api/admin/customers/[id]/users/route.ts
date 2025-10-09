@@ -158,18 +158,14 @@ export async function POST(
       )
     }
 
-    // Verificar se username já existe no customer
-    const existingUsername = await prisma.users.findFirst({
-      where: {
-        username,
-        customer_id: customerId,
-        deleted_at: null
-      }
+    // Verificar se username já existe GLOBALMENTE (unique constraint)
+    const existingUsername = await prisma.users.findUnique({
+      where: { username }
     })
 
-    if (existingUsername) {
+    if (existingUsername && existingUsername.deleted_at === null) {
       return NextResponse.json(
-        { error: 'Username já existe neste customer' },
+        { error: 'Username já está em uso' },
         { status: 409 }
       )
     }
@@ -208,8 +204,30 @@ export async function POST(
       }
     }, { status: 201 })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro ao criar usuário:', error)
+
+    // Tratamento específico para erros de constraint unique do Prisma
+    if (error.code === 'P2002') {
+      const fields = error.meta?.target || []
+      if (fields.includes('username')) {
+        return NextResponse.json(
+          { error: 'Username já está em uso' },
+          { status: 409 }
+        )
+      }
+      if (fields.includes('email')) {
+        return NextResponse.json(
+          { error: 'Email já está em uso' },
+          { status: 409 }
+        )
+      }
+      return NextResponse.json(
+        { error: 'Dados duplicados: esse registro já existe' },
+        { status: 409 }
+      )
+    }
+
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
       { status: 500 }

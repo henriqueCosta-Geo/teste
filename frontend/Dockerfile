@@ -8,7 +8,7 @@ RUN apk add --no-cache openssl libc6-compat netcat-openbsd
 # Copiar package files
 COPY package*.json ./
 
-# Instalar dependências
+# Instalar dependências (aceita mudanças no package.json)
 RUN npm install
 
 # Copiar código
@@ -28,13 +28,17 @@ RUN echo '#!/bin/sh' > /app/start.sh && \
     echo 'npm start' >> /app/start.sh && \
     chmod +x /app/start.sh
 
-# Limpar cache e reinstalar para garantir compatibilidade
-RUN npm ci
-
 # Gerar Prisma client com versão específica
 RUN npx prisma@5.7.0 generate
 
-# Build da aplicação
+# Build da aplicação (com variáveis de ambiente dummy para SAML)
+ENV APP_BASE_URL="http://localhost:3000" \
+    SAML_SP_ENTITY_ID="http://localhost:3000/api/saml/metadata" \
+    SAML_IDP_ENTITY_ID="dummy" \
+    SAML_IDP_SSO_URL="http://localhost" \
+    SAML_IDP_CERT="dummy" \
+    SESSION_SECRET="dummy-secret-minimum-32-characters-long-for-build"
+
 RUN npm run build
 
 # Expor porta

@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
 import { signIn, getSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { LogIn, Eye, EyeOff } from 'lucide-react'
+import { Button } from "primereact/button";
+import { useState, useCallback } from "react";
 
-export default function SignInPage() {
+export default function SignInPage({ searchParams }: { searchParams: { customer?: string } }) {
+  const customer = searchParams?.customer;
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -14,6 +16,23 @@ export default function SignInPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
+  const [corpLoading, setCorpLoading] = useState(false);
+const handleCorporateLogin = useCallback(() => {
+    try {
+      setCorpLoading(true);
+
+      // Monte o "returnTo" como quiser. Exemplo: volta para /app; se tiver cliente, volta para /app/<cliente>
+      const returnTo =
+        customer && customer.trim().length > 0 ? `/app/${encodeURIComponent(customer)}` : "/app";
+
+      // Redirect completo (fora do SPA) para o IdP via nosso endpoint
+      const url = `/api/saml/login?returnTo=${encodeURIComponent(returnTo)}`;
+      window.location.href = url;
+    } catch (e) {
+      console.error("❌ Erro ao iniciar SSO:", e);
+      setCorpLoading(false);
+    }
+  }, [customer]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -146,11 +165,18 @@ export default function SignInPage() {
           </button>
         </form>
 
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Dados de teste: admin@example.com / admin123
-            </p>
-          </div>
+        <Button
+            type="button"
+            onClick={handleCorporateLogin}
+            disabled={corpLoading}
+            className="w-full !bg-white !border-black !text-black hover:!bg-black hover:!text-white disabled:!opacity-60"
+            label={
+              corpLoading
+                ? "Redirecionando..."
+                : `Login corporativo${customer ? ` (${customer})` : ""}`
+            }
+            icon="pi pi-building-columns"
+          />
         </div>
       </div>
     </div>

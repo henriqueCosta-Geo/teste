@@ -58,19 +58,19 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     return null
   }
 
-  // Layout completo para páginas autenticadas
+  // Layout completo para páginas autenticadas - FLEX COM HEADER/FOOTER FIXOS
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+    <div className="flex flex-col h-screen" style={{ backgroundColor: 'var(--bg-secondary)' }}>
 
-      {/* Header */}
-      <header className="shadow-sm border-b" style={{ 
-        backgroundColor: 'var(--bg-primary)', 
-        borderColor: 'var(--border-primary)' 
+      {/* Header FIXO NO TOPO */}
+      <header className="shadow-sm border-b flex-shrink-0" style={{
+        backgroundColor: 'var(--bg-primary)',
+        borderColor: 'var(--border-primary)'
       }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo GeoCarbonite */}
-            <div className="flex items-center">
+            <div className="flex items-center flex-shrink-0">
               <img
                 src="/images/geocarbonite_logo.png"
                 alt="GeoCarbonite"
@@ -79,10 +79,10 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             </div>
 
             {/* Navigation */}
-            <nav className="flex space-x-8">
+            <nav className="flex space-x-4 lg:space-x-8 overflow-x-auto">
               <Link
                 href="/"
-                className={`px-3 py-2 text-sm font-medium flex items-center gap-2 transition-colors ${
+                className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
                   pathname === '/'
                     ? 'border-b-2'
                     : 'hover:opacity-75'
@@ -101,7 +101,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                 <>
                   <Link
                     href="/collections"
-                    className={`px-3 py-2 text-sm font-medium flex items-center gap-2 transition-colors ${
+                    className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
                       pathname.startsWith('/collections')
                         ? 'border-b-2'
                         : 'hover:opacity-75'
@@ -116,7 +116,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                   </Link>
                   <Link
                     href="/agents"
-                    className={`px-3 py-2 text-sm font-medium flex items-center gap-2 transition-colors ${
+                    className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
                       pathname.startsWith('/agents')
                         ? 'border-b-2'
                         : 'hover:opacity-75'
@@ -131,7 +131,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                   </Link>
                   <Link
                     href="/teams"
-                    className={`px-3 py-2 text-sm font-medium flex items-center gap-2 transition-colors ${
+                    className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
                       pathname.startsWith('/teams')
                         ? 'border-b-2'
                         : 'hover:opacity-75'
@@ -146,7 +146,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                   </Link>
                   <Link
                     href="/admin/customers"
-                    className={`px-3 py-2 text-sm font-medium flex items-center gap-2 transition-colors ${
+                    className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
                       pathname.startsWith('/admin/customers')
                         ? 'border-b-2'
                         : 'hover:opacity-75'
@@ -161,7 +161,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                   </Link>
                   <Link
                     href="/database"
-                    className={`px-3 py-2 text-sm font-medium flex items-center gap-2 transition-colors ${
+                    className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
                       pathname.startsWith('/database')
                         ? 'border-b-2'
                         : 'hover:opacity-75'
@@ -180,7 +180,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
               {/* ADMIN e REGULAR só veem busca */}
               <Link
                 href="/search"
-                className={`px-3 py-2 text-sm font-medium flex items-center gap-2 transition-colors ${
+                className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
                   pathname.startsWith('/search')
                     ? 'border-b-2'
                     : 'hover:opacity-75'
@@ -196,9 +196,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             </nav>
 
             {/* User Menu */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 lg:gap-4 flex-shrink-0">
               <CompactThemeToggle />
-              <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+              <div className="hidden lg:flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
                 <User size={16} />
                 <span>{session.user?.name || session.user?.email}</span>
               </div>
@@ -207,36 +207,34 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                   const baseUrl = window.location.origin
                   signOut({ callbackUrl: `${baseUrl}/auth/signin` })
                 }}
-                className="flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                className="flex items-center gap-1 lg:gap-2 px-2 lg:px-3 py-2 text-xs lg:text-sm transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 <LogOut size={16} />
-                Sair
+                <span className="hidden lg:inline">Sair</span>
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 sm:px-0">
-          {children}
-        </div>
+      {/* Main Content - SCROLL INDEPENDENTE ENTRE HEADER E FOOTER */}
+      <main className="flex-1 overflow-y-auto">
+        {children}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t mt-16" style={{ 
-        backgroundColor: 'var(--bg-primary)', 
-        borderColor: 'var(--border-primary)' 
+      {/* Footer FIXO NO RODAPÉ */}
+      <footer className="border-t flex-shrink-0" style={{
+        backgroundColor: 'var(--bg-primary)',
+        borderColor: 'var(--border-primary)'
       }}>
-        <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center">
-            <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+        <div className="max-w-full mx-auto py-3 lg:py-4 px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col lg:flex-row justify-between items-center gap-2">
+            <p className="text-xs lg:text-sm text-center lg:text-left" style={{ color: 'var(--text-tertiary)' }}>
               GeoCarbonite v1.0.0 - Sistema Inteligente de Suporte Técnico
             </p>
-            <div className="flex items-center gap-4 text-sm" style={{ color: 'var(--text-tertiary)' }}>
-              <span>© 2024 GeoCarbonite - Todos os direitos reservados</span>
+            <div className="flex items-center gap-4 text-xs lg:text-sm" style={{ color: 'var(--text-tertiary)' }}>
+              <span>© 2024 GeoCarbonite</span>
             </div>
           </div>
         </div>

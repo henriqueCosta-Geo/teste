@@ -257,7 +257,7 @@ export default function CustomerChatPage() {
   }
 
   return (
-    <div className={`flex flex-col bg-gradient-to-br from-gray-50 to-gray-100 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-screen'}`}>
+    <div className={`flex flex-col bg-gradient-to-br from-gray-50 to-gray-100 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
       {/* Header - RESPONSIVO */}
       <div className="bg-white border-b border-gray-200 shadow-sm flex-shrink-0">
         <div className="w-full px-3 sm:px-4 md:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">

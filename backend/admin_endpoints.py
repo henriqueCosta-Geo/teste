@@ -95,16 +95,26 @@ async def aggregate_overview_metrics(
 ) -> Dict[str, Any]:
     """Agregar métricas gerais do MongoDB"""
     try:
+        logger.info(f"🔍 [OVERVIEW] Buscando chats para customer_id={customer_id}")
+
         chats = await mongo_chat_service.get_customer_chats(
             customer_id=customer_id,
             limit=10000
         )
+
+        logger.info(f"📊 [OVERVIEW] Total de chats retornados: {len(chats)}")
+
+        # Log dos primeiros 3 chats para debug
+        for i, chat in enumerate(chats[:3]):
+            logger.info(f"   Chat {i+1}: customer_id={chat.get('customer_id')}, chat_id={chat.get('chat_id')}")
 
         # Filtrar por período
         filtered_chats = [
             chat for chat in chats
             if start_date <= chat.get('created_at', datetime.min) <= end_date
         ]
+
+        logger.info(f"📊 [OVERVIEW] Chats após filtro de data: {len(filtered_chats)}")
 
         total_chats = len(filtered_chats)
         total_messages = sum(len(chat.get('mensagens', [])) for chat in filtered_chats)
