@@ -32,6 +32,7 @@ from teams_endpoints import teams_router
 from analytics_endpoints import router as analytics_router
 from database_query_endpoints import router as database_query_router
 from admin_endpoints import router as admin_router
+from chat_endpoints import router as chat_router
 # Importar modelos de agentes para que sejam criados pelo create_all()
 import agent_models
 
@@ -134,6 +135,7 @@ app.include_router(teams_router)
 app.include_router(analytics_router)
 app.include_router(database_query_router)
 app.include_router(admin_router)
+app.include_router(chat_router)
 
 
 @app.get("/collections", response_model=List[CollectionWithStats])

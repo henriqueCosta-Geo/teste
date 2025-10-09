@@ -2,9 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Send, Bot, User, ArrowLeft, Loader } from 'lucide-react'
+import { Send, Bot, User, ArrowLeft, Loader, MessageSquarePlus } from 'lucide-react'
 import { agentsAPI } from '@/lib/api'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
+import MessageFeedback from '@/components/chat/MessageFeedback'
+import CopyButton from '@/components/chat/CopyButton'
+import ChatDisclaimer from '@/components/chat/ChatDisclaimer'
+import NewChatConfirmModal from '@/components/chat/NewChatConfirmModal'
 
 interface Message {
   id: string
@@ -32,6 +36,7 @@ export default function AgentChatPage() {
   const [loadingAgent, setLoadingAgent] = useState(true)
   const [agentError, setAgentError] = useState(false)
   const [sessionId] = useState(() => `agent-${params.id}-${Date.now()}`)
+  const [showNewChatModal, setShowNewChatModal] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -146,6 +151,13 @@ export default function AgentChatPage() {
     }
   }
 
+  const handleNewChat = () => {
+    // Limpar mensagens e recarregar para gerar novo sessionId
+    setMessages([])
+    setInput('')
+    window.location.reload()
+  }
+
   if (loadingAgent) {
     return (
       <div className="flex items-center justify-center min-h-96">
@@ -202,8 +214,17 @@ export default function AgentChatPage() {
             </div>
           </div>
 
-          <div className="text-sm text-gray-500">
-            Sessão: {sessionId.substring(0, 16)}...
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowNewChatModal(true)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Nova conversa"
+            >
+              <MessageSquarePlus size={20} />
+            </button>
+            <div className="text-sm text-gray-500">
+              Sessão: {sessionId.substring(0, 16)}...
+            </div>
           </div>
         </div>
       </div>
@@ -234,26 +255,42 @@ export default function AgentChatPage() {
                     <Bot size={16} className="text-blue-600" />
                   </div>
                 )}
-                
-                <div
-                  className={`max-w-2xl px-4 py-2 rounded-lg ${
-                    message.role === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-900 border border-gray-200'
-                  }`}
-                >
-                  {message.role === 'user' ? (
-                    <div className="whitespace-pre-wrap">{message.content}</div>
-                  ) : (
-                    <MarkdownRenderer content={message.content} />
-                  )}
+
+                <div className="flex flex-col gap-2 max-w-2xl">
                   <div
-                    className={`text-xs mt-1 ${
-                      message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
+                    className={`px-4 py-2 rounded-lg relative group ${
+                      message.role === 'user'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-900 border border-gray-200'
                     }`}
                   >
-                    {new Date(message.timestamp).toLocaleTimeString()}
+                    {message.role === 'assistant' && (
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <CopyButton content={message.content} />
+                      </div>
+                    )}
+
+                    {message.role === 'user' ? (
+                      <div className="whitespace-pre-wrap">{message.content}</div>
+                    ) : (
+                      <MarkdownRenderer content={message.content} />
+                    )}
+                    <div
+                      className={`text-xs mt-1 ${
+                        message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
+                      }`}
+                    >
+                      {new Date(message.timestamp).toLocaleTimeString()}
+                    </div>
                   </div>
+
+                  {/* Feedback Buttons - Apenas para mensagens do assistente */}
+                  {message.role === 'assistant' && (
+                    <MessageFeedback
+                      chatId={sessionId}
+                      messageId={message.id}
+                    />
+                  )}
                 </div>
 
                 {message.role === 'user' && (
@@ -285,7 +322,10 @@ export default function AgentChatPage() {
 
       {/* Input */}
       <div className="bg-white border-t border-gray-200 px-6 py-4">
-        <form onSubmit={sendMessage} className="max-w-4xl mx-auto">
+        <form onSubmit={sendMessage} className="max-w-4xl mx-auto space-y-3">
+          {/* Disclaimer */}
+          <ChatDisclaimer storageKey={`chat-disclaimer-agent-${params.id}`} />
+
           <div className="flex gap-4">
             <input
               type="text"
@@ -306,6 +346,13 @@ export default function AgentChatPage() {
           </div>
         </form>
       </div>
+
+      {/* Modal de Nova Conversa */}
+      <NewChatConfirmModal
+        isOpen={showNewChatModal}
+        onClose={() => setShowNewChatModal(false)}
+        onConfirm={handleNewChat}
+      />
     </div>
   )
 }

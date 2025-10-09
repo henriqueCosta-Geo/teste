@@ -3,9 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { Send, Loader2, ArrowLeft, Settings, Bot, User, ArrowDown, Maximize2, Minimize2 } from 'lucide-react'
+import { Send, Loader2, ArrowLeft, Settings, Bot, User, ArrowDown, Maximize2, Minimize2, MessageSquarePlus } from 'lucide-react'
 import { teamsAPI } from '@/lib/api'
 import ImprovedMarkdownRenderer from '@/components/chat/ImprovedMarkdownRenderer'
+import MessageFeedback from '@/components/chat/MessageFeedback'
+import CopyButton from '@/components/chat/CopyButton'
+import ChatDisclaimer from '@/components/chat/ChatDisclaimer'
+import NewChatConfirmModal from '@/components/chat/NewChatConfirmModal'
 
 interface Message {
   id: string
@@ -44,6 +48,7 @@ export default function CustomerChatPage() {
   const [sessionId] = useState(() => `customer-${customerId}-${Date.now()}`)
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [showNewChatModal, setShowNewChatModal] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -256,6 +261,14 @@ export default function CustomerChatPage() {
     setIsFullscreen(!isFullscreen)
   }
 
+  const handleNewChat = () => {
+    // Limpar mensagens e gerar novo sessionId
+    setMessages([])
+    setInput('')
+    // Recarregar a página para gerar novo sessionId
+    window.location.reload()
+  }
+
   return (
     <div className={`flex flex-col bg-gradient-to-br from-gray-50 to-gray-100 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
       {/* Header - RESPONSIVO */}
@@ -294,6 +307,13 @@ export default function CustomerChatPage() {
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            <button
+              onClick={() => setShowNewChatModal(true)}
+              className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-full transition-colors"
+              title="Nova conversa"
+            >
+              <MessageSquarePlus className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+            </button>
             <button
               onClick={toggleFullscreen}
               className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-full transition-colors"
@@ -398,7 +418,7 @@ export default function CustomerChatPage() {
 
                   {/* Message Content */}
                   <div
-                    className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-3 shadow-sm ${
+                    className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-3 shadow-sm relative group ${
                       message.role === 'user'
                         ? 'text-white'
                         : 'bg-white text-gray-900'
@@ -407,12 +427,28 @@ export default function CustomerChatPage() {
                       backgroundColor: customerConfig.primaryColor
                     } : {}}
                   >
+                    {message.role === 'assistant' && (
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <CopyButton content={message.content} />
+                      </div>
+                    )}
+
                     {message.role === 'assistant' ? (
                       <ImprovedMarkdownRenderer content={message.content} />
                     ) : (
                       <p className="whitespace-pre-wrap text-sm sm:text-base">{message.content}</p>
                     )}
                   </div>
+
+                  {/* Feedback Buttons - Apenas para mensagens do assistente */}
+                  {message.role === 'assistant' && (
+                    <div className="px-2 sm:px-3">
+                      <MessageFeedback
+                        chatId={sessionId}
+                        messageId={message.id}
+                      />
+                    </div>
+                  )}
 
                   {/* Timestamp */}
                   <div className={`px-2 sm:px-3 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
@@ -466,7 +502,10 @@ export default function CustomerChatPage() {
 
       {/* Input Area - TEXTAREA AUTO-EXPANSÍVEL */}
       <div className="bg-white border-t border-gray-200 shadow-lg flex-shrink-0">
-        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 py-3 sm:py-4">
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 py-3 sm:py-4 space-y-3">
+          {/* Disclaimer */}
+          <ChatDisclaimer storageKey={`chat-disclaimer-${customerId}`} />
+
           <div className="flex gap-2 sm:gap-3 items-end">
             <div className="flex-1 min-w-0">
               <textarea
@@ -499,6 +538,13 @@ export default function CustomerChatPage() {
           </div>
         </div>
       </div>
+
+      {/* Modal de Nova Conversa */}
+      <NewChatConfirmModal
+        isOpen={showNewChatModal}
+        onClose={() => setShowNewChatModal(false)}
+        onConfirm={handleNewChat}
+      />
     </div>
   )
 }

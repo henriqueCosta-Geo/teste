@@ -550,3 +550,32 @@ export const customersAPI = {
     return await handleResponse(response)
   }
 }
+
+// ============================================================================
+// CHAT FEEDBACK APIs
+// ============================================================================
+
+export const chatAPI = {
+  sendFeedback: async (chatId: string, messageId: string, feedback: {
+    rating: number;
+    comment?: string;
+  }): Promise<{ success: boolean; message: string }> => {
+    console.log('API: Enviando feedback', { chatId, messageId, feedback })
+
+    const response = await fetchWithTimeout(`/api/proxy/api/chats/${chatId}/messages/${messageId}/feedback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        rating: feedback.rating,
+        comment: feedback.comment || null,
+        created_at: new Date().toISOString()
+      }),
+    })
+
+    const data = await handleResponse(response)
+    console.log('API: Resposta do feedback:', data)
+    return data
+  }
+}

@@ -3,9 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { Send, Users, User, ArrowLeft, Loader, Crown, ArrowDown, Bot } from 'lucide-react'
+import { Send, Users, User, ArrowLeft, Loader, Crown, ArrowDown, Bot, MessageSquarePlus } from 'lucide-react'
 import { teamsAPI } from '@/lib/api'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
+import MessageFeedback from '@/components/chat/MessageFeedback'
+import CopyButton from '@/components/chat/CopyButton'
+import ChatDisclaimer from '@/components/chat/ChatDisclaimer'
+import NewChatConfirmModal from '@/components/chat/NewChatConfirmModal'
 
 interface Message {
   id: string
@@ -53,6 +57,7 @@ export default function TeamChatPage() {
   const [streamingMessage, setStreamingMessage] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [showScrollButton, setShowScrollButton] = useState(false)
+  const [showNewChatModal, setShowNewChatModal] = useState(false)
 
   // Obter customerId da query string (quando admin acessa via dashboard)
   const customerIdFromQuery = searchParams.get('customerId')
@@ -294,6 +299,12 @@ export default function TeamChatPage() {
     }
   }
 
+  const handleNewChat = () => {
+    setMessages([])
+    setInput('')
+    window.location.reload()
+  }
+
   if (loadingTeam) {
     return (
       <div className="flex items-center justify-center min-h-96">
@@ -364,6 +375,16 @@ export default function TeamChatPage() {
               </div>
             </div>
           </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowNewChatModal(true)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Nova conversa"
+            >
+              <MessageSquarePlus size={20} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -418,18 +439,34 @@ export default function TeamChatPage() {
                     )}
 
                     <div
-                      className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-3 shadow-sm ${
+                      className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-3 shadow-sm relative group ${
                         message.role === 'user'
                           ? 'bg-green-600 text-white'
                           : 'bg-white text-gray-900 border border-gray-200'
                       }`}
                     >
+                      {message.role === 'assistant' && (
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <CopyButton content={message.content} />
+                        </div>
+                      )}
+
                       {message.role === 'user' ? (
                         <p className="whitespace-pre-wrap text-sm sm:text-base">{message.content}</p>
                       ) : (
                         <MarkdownRenderer content={message.content} />
                       )}
                     </div>
+
+                    {/* Feedback Buttons - Apenas para mensagens do assistente */}
+                    {message.role === 'assistant' && (
+                      <div className="px-2 sm:px-3">
+                        <MessageFeedback
+                          chatId={sessionId}
+                          messageId={message.id}
+                        />
+                      </div>
+                    )}
 
                     <div className={`px-2 sm:px-3 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
                       <span className="text-xs text-gray-400">
@@ -512,7 +549,10 @@ export default function TeamChatPage() {
 
       {/* Input Area - FIXO NO RODAPÉ */}
       <div className="bg-white border-t border-gray-200 shadow-lg flex-shrink-0">
-        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 py-3 sm:py-4">
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 py-3 sm:py-4 space-y-3">
+          {/* Disclaimer */}
+          <ChatDisclaimer storageKey={`chat-disclaimer-team-${params.id}`} />
+
           <form onSubmit={sendMessage}>
             <div className="flex gap-2 sm:gap-3 items-end">
               <div className="flex-1 min-w-0">
@@ -546,6 +586,13 @@ export default function TeamChatPage() {
           </form>
         </div>
       </div>
+
+      {/* Modal de Nova Conversa */}
+      <NewChatConfirmModal
+        isOpen={showNewChatModal}
+        onClose={() => setShowNewChatModal(false)}
+        onConfirm={handleNewChat}
+      />
     </div>
   )
 }
