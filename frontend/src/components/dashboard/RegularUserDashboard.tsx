@@ -72,6 +72,14 @@ export default function RegularUserDashboard() {
     <div className="space-y-6" style={{ '--primary-color': primaryColor } as any}>
       {/* Header com branding customizado */}
       <div className="mb-8 text-center">
+        {/* Logo do Customer */}
+        {metadata?.ui?.logo_path && (
+          <img
+            src={metadata.ui.logo_path}
+            alt={customerName}
+            className="w-20 h-20 mx-auto mb-4 rounded-full object-cover shadow-lg"
+          />
+        )}
         <h1 className="text-4xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
           Bem-vindo ao {customerName}
         </h1>

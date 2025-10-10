@@ -74,9 +74,16 @@ class QualityMetrics(BaseModel):
     errors: List[Dict[str, Any]]
     slow_queries: List[Dict[str, Any]]
 
+class TokensByDay(BaseModel):
+    date: str
+    total_tokens: int
+    input_tokens: int
+    output_tokens: int
+
 class DashboardResponse(BaseModel):
     overview: OverviewMetrics
     token_consumption: TokenConsumption
+    tokens_by_day: List[TokensByDay]
     agents_performance: List[AgentPerformance]
     conversation_insights: ConversationInsights
     rag_analytics: RAGAnalytics
@@ -576,6 +583,64 @@ async def aggregate_rag_analytics(
             'collections_stats': []
         }
 
+async def aggregate_tokens_by_day(
+    mongo_chat_service: MongoChatService,
+    customer_id: int,
+    start_date: datetime,
+    end_date: datetime
+) -> List[Dict[str, Any]]:
+    """Agregar tokens por dia - FILTRADO POR CUSTOMER_ID"""
+    try:
+        logger.info(f"🔍 [TOKENS_BY_DAY] Buscando tokens para customer_id={customer_id}")
+
+        chats = await mongo_chat_service.get_customer_chats(
+            customer_id=customer_id,
+            limit=10000
+        )
+
+        # Agregar tokens por data
+        tokens_by_date = {}
+
+        for chat in chats:
+            if not (start_date <= chat.get('created_at', datetime.min) <= end_date):
+                continue
+
+            for msg in chat.get('mensagens', []):
+                msg_date = msg.get('created_at')
+                if not msg_date or not (start_date <= msg_date <= end_date):
+                    continue
+
+                # Pegar só a data (sem hora)
+                date_key = msg_date.date().isoformat()
+
+                if date_key not in tokens_by_date:
+                    tokens_by_date[date_key] = {
+                        'date': date_key,
+                        'total_tokens': 0,
+                        'input_tokens': 0,
+                        'output_tokens': 0
+                    }
+
+                # Somar tokens
+                token_total = msg.get('token_total', 0)
+                tokens = msg.get('tokens', {})
+                token_input = tokens.get('input', 0)
+                token_output = tokens.get('output', 0)
+
+                tokens_by_date[date_key]['total_tokens'] += token_total
+                tokens_by_date[date_key]['input_tokens'] += token_input
+                tokens_by_date[date_key]['output_tokens'] += token_output
+
+        # Converter para lista ordenada por data
+        result = sorted(tokens_by_date.values(), key=lambda x: x['date'])
+
+        logger.info(f"📊 [TOKENS_BY_DAY] Retornando {len(result)} dias de dados")
+        return result
+
+    except Exception as e:
+        logger.error(f"Erro ao agregar tokens por dia: {e}")
+        return []
+
 async def aggregate_quality_metrics(
     mongo_chat_service: MongoChatService,
     customer_id: int,
@@ -715,6 +780,10 @@ async def get_admin_dashboard(
             mongo_chat_service, customer_id, start_date, end_date
         )
 
+        tokens_by_day_data = await aggregate_tokens_by_day(
+            mongo_chat_service, customer_id, start_date, end_date
+        )
+
         # Count users (será implementado quando multi-tenant estiver completo)
         total_users = 0
         active_users = 0
@@ -732,6 +801,7 @@ async def get_admin_dashboard(
                 period_days=days_back
             ),
             token_consumption=TokenConsumption(**token_data),
+            tokens_by_day=[TokensByDay(**day) for day in tokens_by_day_data],
             agents_performance=[AgentPerformance(**perf) for perf in agent_perf],
             conversation_insights=ConversationInsights(**conversation_data),
             rag_analytics=RAGAnalytics(**rag_data),
@@ -748,3 +818,110 @@ async def get_admin_dashboard(
         logger.error(f"❌ Erro ao gerar dashboard: {e}")
         logger.exception(e)
         raise HTTPException(status_code=500, detail="Erro ao gerar dashboard")
+
+@router.get("/customers/{customer_id}/export-conversations")
+async def export_customer_conversations(
+    customer_id: int,
+    year: int = Query(..., ge=2020, le=2100, description="Ano"),
+    month: int = Query(..., ge=1, le=12, description="Mês (1-12)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Exportar conversas de um customer específico para um mês
+
+    **IMPORTANTE**: Filtra conversas APENAS do customer_id especificado
+
+    - **customer_id**: ID do customer
+    - **year**: Ano (ex: 2025)
+    - **month**: Mês de 1 a 12
+
+    Retorna JSON com todas as conversas do mês filtradas por customer_id
+    """
+    try:
+        from calendar import monthrange
+
+        logger.info(f"🔍 [EXPORT] Exportando conversas do customer {customer_id} - {year}/{month}")
+
+        # Calcular range do mês
+        _, last_day = monthrange(year, month)
+        start_date = datetime(year, month, 1)
+        end_date = datetime(year, month, last_day, 23, 59, 59)
+
+        # Initialize MongoDB service
+        mongo_service = get_mongo_service()
+        mongo_chat_service = MongoChatService(mongo_service)
+
+        # Buscar chats do customer - JÁ FILTRADO POR CUSTOMER_ID
+        chats = await mongo_chat_service.get_customer_chats(
+            customer_id=customer_id,
+            limit=100000  # Limite alto para pegar todas do mês
+        )
+
+        logger.info(f"📊 [EXPORT] Total de chats do customer {customer_id}: {len(chats)}")
+
+        # Filtrar pelo mês especificado
+        filtered_chats = []
+        for chat in chats:
+            created_at = chat.get('created_at')
+            if created_at and start_date <= created_at <= end_date:
+                # Formatar datas para ISO string
+                chat_export = {
+                    'chat_id': chat.get('chat_id'),
+                    'customer_id': chat.get('customer_id'),
+                    'created_by': chat.get('created_by'),
+                    'created_at': created_at.isoformat() if created_at else None,
+                    'team_id': chat.get('team_id'),
+                    'team_name': chat.get('team_name'),
+                    'agent_id': chat.get('agent_id'),
+                    'mensagens': []
+                }
+
+                # Processar mensagens
+                for msg in chat.get('mensagens', []):
+                    msg_export = {
+                        'mensagem_id': msg.get('mensagem_id'),
+                        'message_type': msg.get('message_type'),
+                        'content': msg.get('mensagem'),  # ✅ Campo correto no MongoDB é 'mensagem'
+                        'created_at': msg.get('created_at').isoformat() if msg.get('created_at') else None,
+                        'agent_name': msg.get('agent_name'),
+                        'user_assistant_id': msg.get('user_assistant_id'),
+                        'token_total': msg.get('token_total', 0),
+                        'execution_time_ms': msg.get('execution_time_ms', 0),
+                        'rag': msg.get('rag', False),
+                        'success': msg.get('success', True)
+                    }
+                    chat_export['mensagens'].append(msg_export)
+
+                filtered_chats.append(chat_export)
+
+        logger.info(f"📊 [EXPORT] Chats no período {year}-{month:02d}: {len(filtered_chats)}")
+
+        # Estatísticas do export
+        total_messages = sum(len(chat['mensagens']) for chat in filtered_chats)
+
+        result = {
+            'customer_id': customer_id,
+            'period': {
+                'year': year,
+                'month': month,
+                'start_date': start_date.isoformat(),
+                'end_date': end_date.isoformat()
+            },
+            'summary': {
+                'total_chats': len(filtered_chats),
+                'total_messages': total_messages
+            },
+            'conversations': filtered_chats,
+            'exported_at': datetime.now().isoformat()
+        }
+
+        logger.info(f"✅ [EXPORT] Export concluído: {len(filtered_chats)} chats, {total_messages} mensagens")
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro ao exportar conversas: {e}")
+        logger.exception(e)
+        raise HTTPException(status_code=500, detail="Erro ao exportar conversas")

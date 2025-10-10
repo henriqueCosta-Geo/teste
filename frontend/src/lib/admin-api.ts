@@ -37,14 +37,28 @@ export const adminAPI = {
   },
 
   /**
-   * Exportar dados do dashboard em JSON
+   * Exportar conversas do mês atual em JSON
    */
-  async exportDashboardJSON(customerId: number, daysBack: number = 30): Promise<Blob> {
-    const data = await this.getDashboard(customerId, daysBack)
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json',
-    })
-    return blob
+  async exportConversationsMonth(customerId: number): Promise<Blob> {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth() + 1 // JavaScript months are 0-indexed
+
+    const response = await fetch(
+      `/api/proxy/api/admin/customers/${customerId}/export-conversations?year=${year}&month=${month}`,
+      {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error('Erro ao exportar conversas do mês')
+    }
+
+    return await response.blob()
   },
 
   /**

@@ -209,15 +209,20 @@ class MongoChatService:
         message_type: str,
         content: str,
         metadata: Optional[Dict] = None
-    ) -> bool:
-        """Adicionar mensagem a um chat existente"""
+    ) -> Optional[str]:
+        """
+        Adicionar mensagem a um chat existente
+
+        Returns:
+            str: mensagem_id se bem sucedido, None se falhar
+        """
         try:
             logger.info(f"🔍 [MONGO-DEBUG] Tentando salvar mensagem - chat_id: {chat_id}, type: {message_type}")
 
             if self.chats_collection is None:
                 logger.error("❌ [MONGO-DEBUG] chats_collection é None!")
                 logger.warning("⚠️ MongoDB não disponível - mensagem não será salva")
-                return False
+                return None
 
             logger.info(f"✅ [MONGO-DEBUG] chats_collection OK")
 
@@ -226,7 +231,7 @@ class MongoChatService:
             if not existing_chat:
                 logger.error(f"❌ [MONGO-DEBUG] Chat {chat_id} NÃO EXISTE no MongoDB!")
                 logger.error(f"   Não é possível adicionar mensagem a um chat inexistente")
-                return False
+                return None
 
             logger.info(f"✅ [MONGO-DEBUG] Chat {chat_id} encontrado no MongoDB")
 
@@ -255,9 +260,12 @@ class MongoChatService:
             team_id = metadata.get("team_id", None) if metadata else None
             team_name = metadata.get("team_name", None) if metadata else None
 
+            # Gerar mensagem_id
+            mensagem_id = str(uuid.uuid4())
+
             # Criar documento de mensagem COMPLETO
             message_document = {
-                "mensagem_id": str(uuid.uuid4()),
+                "mensagem_id": mensagem_id,
                 "message_type": message_type,
                 "mensagem": content,
 
@@ -298,7 +306,7 @@ class MongoChatService:
 
             # Log do documento sendo inserido (resumido)
             logger.info(f"📄 [MONGO-SAVE] Documento a inserir:")
-            logger.info(f"   - mensagem_id: {message_document['mensagem_id']}")
+            logger.info(f"   - mensagem_id: {mensagem_id}")
             logger.info(f"   - message_type: {message_type}")
             logger.info(f"   - content length: {len(content)} chars")
             logger.info(f"   - user_assistant_id: {user_assistant_id}")
@@ -322,16 +330,16 @@ class MongoChatService:
             logger.info(f"   - upserted_id: {result.upserted_id}")
 
             if result.modified_count > 0:
-                logger.info(f"✅ [MONGO] Mensagem adicionada ao chat {chat_id}")
-                return True
+                logger.info(f"✅ [MONGO] Mensagem adicionada ao chat {chat_id} com ID {mensagem_id}")
+                return mensagem_id
             else:
                 logger.error(f"❌ [MONGO] Chat {chat_id} não foi modificado! (matched: {result.matched_count})")
-                return False
+                return None
 
         except Exception as e:
             logger.error(f"❌ [MONGO] Erro ao adicionar mensagem: {e}")
             logger.exception(e)  # Stack trace completo
-            return False
+            return None
 
     async def update_message_feedback(
         self,

@@ -11,10 +11,9 @@ import type { DashboardData, DashboardFilters } from '@/lib/admin-types'
 import DashboardFiltersComponent from './DashboardFilters'
 import OverviewSection from './sections/OverviewSection'
 import TokenConsumptionSection from './sections/TokenConsumptionSection'
+import TokensByDayChart from './sections/TokensByDayChart'
 import AgentsPerformanceSection from './sections/AgentsPerformanceSection'
 import ConversationInsightsSection from './sections/ConversationInsightsSection'
-import RAGAnalyticsSection from './sections/RAGAnalyticsSection'
-import QualityMetricsSection from './sections/QualityMetricsSection'
 
 interface CustomerDashboardProps {
   customerId: number
@@ -63,15 +62,16 @@ export default function CustomerDashboard({ customerId }: CustomerDashboardProps
     }
   }
 
-  const handleExportJSON = async () => {
+  const handleExportConversations = async () => {
     try {
-      const daysBack = getPeriodDays(filters.period)
-      const blob = await adminAPI.exportDashboardJSON(effectiveCustomerId, daysBack)
-      const filename = `dashboard-customer-${effectiveCustomerId}-${new Date().toISOString().split('T')[0]}.json`
+      const blob = await adminAPI.exportConversationsMonth(effectiveCustomerId)
+      const now = new Date()
+      const monthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const filename = `conversas-customer-${effectiveCustomerId}-${monthYear}.json`
       adminAPI.downloadExport(blob, filename)
     } catch (err) {
-      console.error('Erro ao exportar:', err)
-      alert('Erro ao exportar dados')
+      console.error('Erro ao exportar conversas:', err)
+      alert('Erro ao exportar conversas do mês')
     }
   }
 
@@ -188,9 +188,6 @@ export default function CustomerDashboard({ customerId }: CustomerDashboardProps
           <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>
             Dashboard de Administração
           </h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-            Plano: {data.overview.plan_type} • {data.overview.total_chats} chats • {data.overview.total_messages} mensagens (últimos {data.overview.period_days} dias)
-          </p>
         </div>
 
         <div className="flex gap-2">
@@ -208,8 +205,9 @@ export default function CustomerDashboard({ customerId }: CustomerDashboardProps
           <button onClick={loadDashboard} className="btn-outline" title="Atualizar">
             <RefreshCw size={16} />
           </button>
-          <button onClick={handleExportJSON} className="btn-outline" title="Exportar JSON">
+          <button onClick={handleExportConversations} className="btn-outline" title="Exportar Conversas do Mês">
             <Download size={16} />
+            Conversas do Mês
           </button>
         </div>
       </div>
@@ -222,13 +220,13 @@ export default function CustomerDashboard({ customerId }: CustomerDashboardProps
 
       <TokenConsumptionSection data={data.token_consumption} />
 
+      {data.tokens_by_day && data.tokens_by_day.length > 0 && (
+        <TokensByDayChart data={data.tokens_by_day} />
+      )}
+
       <AgentsPerformanceSection data={data.agents_performance} />
 
       <ConversationInsightsSection data={data.conversation_insights} />
-
-      <RAGAnalyticsSection data={data.rag_analytics} />
-
-      <QualityMetricsSection data={data.quality_metrics} />
     </div>
   )
 }

@@ -52,49 +52,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/teams - Criar team
+// POST /api/teams - Criar team (não usado - criação é feita via proxy para backend Python)
 export async function POST(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions)
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const body = await request.json()
-    const {
-      name,
-      description = "",
-      leader_agent_id
-    } = body
-
-    if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'Nome é obrigatório' },
-        { status: 400 }
-      )
-    }
-
-    // Criar o team
-    const team = await prisma.agentTeams.create({
-      data: {
-        name: name.trim(),
-        description: description.trim(),
-        leader_agent_id: leader_agent_id ? parseInt(leader_agent_id) : null,
-        is_active: true
-      }
-    })
-
-    return NextResponse.json({
-      id: team.id,
-      message: 'Team criado com sucesso'
-    }, { status: 201 })
-
-  } catch (error) {
-    console.error('Erro ao criar team:', error)
-    return NextResponse.json(
-      { error: 'Erro interno do servidor' },
-      { status: 500 }
-    )
-  }
+  return NextResponse.json(
+    { error: 'Use /api/proxy/api/teams/ para criar times' },
+    { status: 400 }
+  )
 }

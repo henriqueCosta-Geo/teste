@@ -45,12 +45,21 @@ export default function EditCustomerPage() {
       // Carregar metadados
       const metadata = await customersAPI.getMetadata(customerId)
 
+      // Extrair logo_path do TOML se existir
+      let logoPath = ''
+      if (metadata.toml_content) {
+        const logoMatch = metadata.toml_content.match(/logo_path\s*=\s*"([^"]+)"/)
+        if (logoMatch) {
+          logoPath = logoMatch[1]
+        }
+      }
+
       setFormData({
         name: data.name,
         slug: data.slug,
         description: '',
         metadata_toml: metadata.toml_content || '',
-        logo_path: '',
+        logo_path: logoPath,
         is_active: data.is_active
       })
     } catch (error) {
@@ -259,7 +268,38 @@ export default function EditCustomerPage() {
             <LogoUpload
               customerSlug={formData.slug}
               currentLogoPath={formData.logo_path}
-              onLogoChange={(path) => setFormData({ ...formData, logo_path: path })}
+              onLogoChange={(path) => {
+                // Atualizar logo_path e TOML em uma única operação
+                setFormData(prev => {
+                  const updatedToml = prev.metadata_toml.replace(
+                    /logo_path\s*=\s*"[^"]*"/,
+                    `logo_path = "${path}"`
+                  )
+
+                  let finalToml = updatedToml
+
+                  // Se não existia logo_path no TOML, adicionar
+                  if (!prev.metadata_toml.includes('logo_path')) {
+                    const uiSectionMatch = updatedToml.match(/\[ui\]/)
+                    if (uiSectionMatch) {
+                      const insertPosition = uiSectionMatch.index! + '[ui]'.length
+                      finalToml =
+                        updatedToml.slice(0, insertPosition) +
+                        `\nlogo_path = "${path}"` +
+                        updatedToml.slice(insertPosition)
+                    } else {
+                      // Se não existe seção [ui], criar
+                      finalToml = `[ui]\nlogo_path = "${path}"\n\n${prev.metadata_toml}`
+                    }
+                  }
+
+                  return {
+                    ...prev,
+                    logo_path: path,
+                    metadata_toml: finalToml
+                  }
+                })
+              }}
             />
           </div>
 

@@ -21,6 +21,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { path: string[] } }
 ) {
+  console.log('🔍 PROXY POST REQUEST:', {
+    url: request.url,
+    path: params.path,
+    pathJoined: params.path?.join('/')
+  })
   return proxyRequest(request, params.path, 'POST')
 }
 
@@ -45,14 +50,18 @@ async function proxyRequest(
 ) {
   const maxRetries = 3
   const retryDelay = 1000 // 1 segundo
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const path = pathSegments.join('/')
+      // SEMPRE adicionar barra final para rotas que terminam com 'teams', 'agents', etc
+      // Isso evita redirect 307 do FastAPI que converte POST em GET
+      const needsTrailingSlash = path.match(/\/(teams|agents|collections)$/)
+      const pathWithSlash = needsTrailingSlash ? `${path}/` : path
       const searchParams = request.nextUrl.searchParams.toString()
-      const url = `${API_BASE_URL}/${path}${searchParams ? `?${searchParams}` : ''}`
+      const url = `${API_BASE_URL}/${pathWithSlash}${searchParams ? `?${searchParams}` : ''}`
 
-      console.log(`Attempt ${attempt}: ${method} ${url}`)
+      console.log(`Attempt ${attempt}: ${method} ${url} (original: ${request.url}, needs slash: ${!!needsTrailingSlash})`)
 
       const headers: HeadersInit = {}
       

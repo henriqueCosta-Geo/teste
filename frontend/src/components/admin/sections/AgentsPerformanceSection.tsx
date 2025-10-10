@@ -1,6 +1,6 @@
 'use client'
 
-import { Bot, Clock, CheckCircle, AlertTriangle, Database } from 'lucide-react'
+import { Bot, Clock } from 'lucide-react'
 import type { AgentPerformance } from '@/lib/admin-types'
 
 interface AgentsPerformanceSectionProps {
@@ -8,6 +8,10 @@ interface AgentsPerformanceSectionProps {
 }
 
 export default function AgentsPerformanceSection({ data }: AgentsPerformanceSectionProps) {
+  const cleanAgentName = (name: string) => {
+    return name.replace(/Especialista\s+(em\s+)?/gi, '').trim()
+  }
+
   const getSuccessRateBadge = (rate: number) => {
     if (rate >= 95) return 'badge-green'
     if (rate >= 90) return 'badge-yellow'
@@ -28,9 +32,6 @@ export default function AgentsPerformanceSection({ data }: AgentsPerformanceSect
                 <th className="text-left py-3 px-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
                   Agente
                 </th>
-                <th className="text-left py-3 px-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Modelo
-                </th>
                 <th className="text-center py-3 px-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
                   Mensagens
                 </th>
@@ -39,12 +40,6 @@ export default function AgentsPerformanceSection({ data }: AgentsPerformanceSect
                 </th>
                 <th className="text-center py-3 px-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
                   Taxa Sucesso
-                </th>
-                <th className="text-center py-3 px-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  RAG Usage
-                </th>
-                <th className="text-center py-3 px-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Collections
                 </th>
               </tr>
             </thead>
@@ -60,7 +55,7 @@ export default function AgentsPerformanceSection({ data }: AgentsPerformanceSect
                       <Bot className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
                       <div>
                         <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                          {agent.agent_name}
+                          {cleanAgentName(agent.agent_name)}
                         </p>
                         {agent.team_name && (
                           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
@@ -69,11 +64,6 @@ export default function AgentsPerformanceSection({ data }: AgentsPerformanceSect
                         )}
                       </div>
                     </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">
-                      {agent.agent_model}
-                    </span>
                   </td>
                   <td className="py-3 px-4 text-center">
                     <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -98,26 +88,6 @@ export default function AgentsPerformanceSection({ data }: AgentsPerformanceSect
                           ({agent.errors} erros)
                         </span>
                       )}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    <div>
-                      <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                        {agent.rag_usage_rate.toFixed(1)}%
-                      </span>
-                      {agent.rag_usage_rate > 0 && (
-                        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                          ~{agent.avg_chunks_per_query.toFixed(1)} chunks
-                        </p>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <Database className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
-                      <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {agent.collections_count}
-                      </span>
                     </div>
                   </td>
                 </tr>

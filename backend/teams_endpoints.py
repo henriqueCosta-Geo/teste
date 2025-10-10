@@ -635,14 +635,19 @@ async def execute_team_task(
                             start_time=start_time
                         )
 
+                        # Salvar mensagem e capturar ID gerado
+                        message_id = None
                         if mongo_chat_svc:
-                            await mongo_chat_svc.add_message_to_chat(
+                            message_id = await mongo_chat_svc.add_message_to_chat(
                                 chat_id=session_id,
                                 message_type="team",
                                 content=response_content,
                                 metadata=response_metadata
                             )
-                            logger.info(f"✅ [MONGO] Resposta do time salva")
+                            if message_id:
+                                logger.info(f"✅ [MONGO] Resposta do time salva com ID: {message_id}")
+                            else:
+                                logger.error(f"❌ [MONGO] Falha ao salvar resposta do time")
 
                         # Legacy PostgreSQL (opcional)
                         try:
@@ -650,8 +655,15 @@ async def execute_team_task(
                         except Exception as e:
                             logger.warning(f"⚠️ [LEGACY] Erro ao salvar no PostgreSQL: {e}")
 
-                        # Evento de conclusão
-                        yield f"data: {json.dumps({'type': 'completed', 'execution_time_ms': int((time.time() - start_time) * 1000)})}\n\n"
+                        # Evento de conclusão com message_id
+                        completion_event = {
+                            'type': 'completed',
+                            'execution_time_ms': int((time.time() - start_time) * 1000)
+                        }
+                        if message_id:
+                            completion_event['message_id'] = message_id
+
+                        yield f"data: {json.dumps(completion_event)}\n\n"
                         # [DONE] deve ser enviado sem JSON para SSE padrão
                         yield "data: [DONE]\n\n"
                     else:

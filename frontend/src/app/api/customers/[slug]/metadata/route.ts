@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ServerMetadataOrchestrator } from '@/lib/metadata-orchestrator-server'
+import { PrismaClient } from '@prisma/client'
+
+const prisma = new PrismaClient()
 
 // GET /api/customers/{slug}/metadata - Buscar metadados de um customer específico
 export async function GET(
@@ -13,12 +16,24 @@ export async function GET(
       return NextResponse.json({ error: 'Customer slug é obrigatório' }, { status: 400 })
     }
 
+    // Buscar customer no banco para obter o nome
+    const customer = await prisma.customers.findUnique({
+      where: { slug: customerSlug, is_active: true, deleted_at: null },
+      select: { id: true, name: true, slug: true }
+    })
+
+    if (!customer) {
+      return NextResponse.json({ error: 'Customer não encontrado' }, { status: 404 })
+    }
+
     // Buscar metadados do customer
     const metadata = await ServerMetadataOrchestrator.getCustomerMetadata(customerSlug)
 
     return NextResponse.json({
       customer: {
-        slug: customerSlug
+        id: customer.id,
+        name: customer.name,
+        slug: customer.slug
       },
       ...metadata
     })

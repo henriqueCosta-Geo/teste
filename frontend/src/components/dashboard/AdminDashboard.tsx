@@ -137,13 +137,23 @@ export default function AdminDashboard() {
       {/* Header com branding customizado */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
-              {customerName} Dashboard
-            </h1>
-            <p style={{ color: 'var(--text-secondary)' }}>
-              {metadata?.chat?.welcome_message || 'Gerencie recursos e converse com agentes IA'}
-            </p>
+          <div className="flex items-center gap-4">
+            {/* Logo do Customer */}
+            {metadata?.ui?.logo_path && (
+              <img
+                src={metadata.ui.logo_path}
+                alt={customerName}
+                className="w-16 h-16 rounded-full object-cover shadow-lg"
+              />
+            )}
+            <div>
+              <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+                {customerName} Dashboard
+              </h1>
+              <p style={{ color: 'var(--text-secondary)' }}>
+                {metadata?.chat?.welcome_message || 'Gerencie recursos e converse com agentes IA'}
+              </p>
+            </div>
           </div>
         </div>
 

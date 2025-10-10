@@ -42,6 +42,13 @@ interface Team {
   members: TeamMember[]
 }
 
+interface CustomerMetadata {
+  name: string
+  logo?: string
+  primaryColor?: string
+  secondaryColor?: string
+}
+
 export default function TeamChatPage() {
   const params = useParams()
   const router = useRouter()
@@ -59,6 +66,9 @@ export default function TeamChatPage() {
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [showNewChatModal, setShowNewChatModal] = useState(false)
 
+  // Customer metadata para renderizar logo
+  const [customerMetadata, setCustomerMetadata] = useState<CustomerMetadata | null>(null)
+
   // Obter customerId da query string (quando admin acessa via dashboard)
   const customerIdFromQuery = searchParams?.get('customerId')
 
@@ -70,7 +80,8 @@ export default function TeamChatPage() {
   useEffect(() => {
     loadTeam()
     loadMessages()
-  }, [params?.id])
+    loadCustomerMetadata()
+  }, [params?.id, customerIdFromQuery])
 
   // Auto-scroll INTELIGENTE
   useEffect(() => {
@@ -168,6 +179,46 @@ export default function TeamChatPage() {
     }
   }
 
+  const loadCustomerMetadata = async () => {
+    // Só carregar metadados se houver customerId (query param ou session)
+    const customerId = customerIdFromQuery || session?.user?.customer_id
+
+    if (!customerId) {
+      console.log('ℹ️ Sem customerId, usando configuração padrão')
+      return
+    }
+
+    try {
+      // Buscar customer por ID para obter o slug
+      const customerResponse = await fetch(`/api/admin/customers/${customerId}`)
+      if (!customerResponse.ok) {
+        console.warn('⚠️ Customer não encontrado, usando configuração padrão')
+        return
+      }
+
+      const customerData = await customerResponse.json()
+      const customerSlug = customerData.slug
+
+      // Buscar metadados do customer
+      const metadataResponse = await fetch(`/api/customers/${customerSlug}/metadata`)
+      if (metadataResponse.ok) {
+        const data = await metadataResponse.json()
+
+        setCustomerMetadata({
+          name: data.customer?.name || 'Cliente',
+          logo: data.ui?.logo_path,
+          primaryColor: data.ui?.primary_color || '#10B981',
+          secondaryColor: data.ui?.secondary_color
+        })
+
+        console.log('✅ Metadados do customer carregados:', data.customer?.name)
+      }
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar metadados do customer:', error)
+      // Não quebra a página, apenas não exibe logo
+    }
+  }
+
   // Auto-resize textarea
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
@@ -248,7 +299,8 @@ export default function TeamChatPage() {
           setStreamingMessage('')
 
           const assistantMessage: Message = {
-            id: `assistant-${Date.now()}`,
+            // Usar message_id do backend se disponível, senão fallback para timestamp
+            id: chunk.message_id || `assistant-${Date.now()}`,
             content: finalResponse || 'Resposta processada com sucesso.',
             role: 'assistant',
             timestamp: new Date().toISOString(),
@@ -362,12 +414,33 @@ export default function TeamChatPage() {
             </button>
 
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center bg-green-100 flex-shrink-0">
-                <Users className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-green-600" />
-              </div>
+              {/* Renderizar logo do customer se disponível, senão ícone de team */}
+              {customerMetadata?.logo ? (
+                <img
+                  src={customerMetadata.logo}
+                  alt={customerMetadata.name}
+                  className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-full object-cover flex-shrink-0"
+                />
+              ) : (
+                <div
+                  className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{
+                    backgroundColor: customerMetadata?.primaryColor
+                      ? `${customerMetadata.primaryColor}20`
+                      : '#D1FAE5'
+                  }}
+                >
+                  <Users
+                    className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6"
+                    style={{
+                      color: customerMetadata?.primaryColor || '#10B981'
+                    }}
+                  />
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <h1 className="text-sm sm:text-base md:text-xl font-semibold text-gray-900 truncate">
-                  {team.name}
+                  {customerMetadata?.name || team.name}
                 </h1>
                 <p className="text-xs sm:text-sm text-gray-500 truncate">
                   {team.members.length} agentes especializados

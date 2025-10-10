@@ -59,15 +59,25 @@ export default function CreateTeamPage() {
     setError('')
 
     try {
-      await teamsAPI.create({
+      console.log('🚀 [CREATE-TEAM] Iniciando criação do time...')
+      console.log('📝 [CREATE-TEAM] Dados:', {
         name: formData.name.trim(),
         description: formData.description.trim(),
         leader_agent_id: formData.collaboration_mode === 'hierarchical' && leaderAgent ? leaderAgent : undefined,
         member_ids: selectedAgents
       })
 
+      const result = await teamsAPI.create({
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        leader_agent_id: formData.collaboration_mode === 'hierarchical' && leaderAgent ? leaderAgent : undefined,
+        member_ids: selectedAgents
+      })
+
+      console.log('✅ [CREATE-TEAM] Time criado com sucesso:', result)
       router.push('/teams')
     } catch (error: any) {
+      console.error('❌ [CREATE-TEAM] Erro ao criar time:', error)
       setError(error.message || 'Erro ao criar time')
     } finally {
       setLoading(false)

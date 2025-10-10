@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes)
     await writeFile(filePath, buffer)
 
-    // Retornar path relativo para usar no TOML
+    // Retornar path estático (funciona após script de build copiar public/ para standalone)
     const relativePath = `/logos/${fileName}`
 
     return NextResponse.json({

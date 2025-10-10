@@ -292,16 +292,28 @@ export const teamsAPI = {
       member_ids: team.member_ids
     }
 
-    console.log('Dados sendo enviados para criação de time:', requestBody)
+    console.log('🔨 [TEAMS-API] Dados sendo enviados para criação de time:', requestBody)
+    console.log('🔨 [TEAMS-API] URL:', '/api/proxy/api/teams/')
+    console.log('🔨 [TEAMS-API] Method:', 'POST')
 
-    const response = await fetchWithTimeout(`/api/proxy/api/teams/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    })
-    return await handleResponse(response)
+    try {
+      const response = await fetchWithTimeout(`/api/proxy/api/teams/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      })
+      console.log('📡 [TEAMS-API] Response status:', response.status, response.statusText)
+      console.log('📡 [TEAMS-API] Response headers:', Object.fromEntries(response.headers.entries()))
+      const result = await handleResponse(response)
+      console.log('✅ [TEAMS-API] Time criado com sucesso:', result)
+      console.log('✅ [TEAMS-API] Tipo do resultado:', typeof result, Array.isArray(result) ? 'é array' : 'não é array')
+      return result
+    } catch (error) {
+      console.error('❌ [TEAMS-API] Erro ao criar time:', error)
+      throw error
+    }
   },
 
   list: async (): Promise<any[]> => {

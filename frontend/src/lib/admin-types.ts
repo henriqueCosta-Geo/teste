@@ -129,9 +129,17 @@ export interface QualityMetrics {
   slow_queries: SlowQuery[]
 }
 
+export interface TokensByDay {
+  date: string  // "2025-01-15"
+  total_tokens: number
+  input_tokens: number
+  output_tokens: number
+}
+
 export interface DashboardData {
   overview: OverviewMetrics
   token_consumption: TokenConsumption
+  tokens_by_day: TokensByDay[]
   agents_performance: AgentPerformance[]
   conversation_insights: ConversationInsights
   rag_analytics: RAGAnalytics

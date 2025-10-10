@@ -10,7 +10,7 @@ export default function AdminDashboardPage({ params }: PageProps) {
   const customerId = parseInt(params?.customerId, 10)
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-6 py-8 max-w-7xl">
       <CustomerDashboard customerId={customerId} />
     </div>
   )
