@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/agents/${params.id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/agents/${params?.id}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -39,7 +39,7 @@ export async function PUT(
   try {
     const formData = await request.formData()
 
-    const response = await fetch(`${API_BASE_URL}/api/agents/${params.id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/agents/${params?.id}`, {
       method: 'PUT',
       body: formData,
     })
@@ -67,7 +67,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/agents/${params.id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/agents/${params?.id}`, {
       method: 'DELETE',
     })
 

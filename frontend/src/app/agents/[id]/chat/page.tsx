@@ -35,14 +35,14 @@ export default function AgentChatPage() {
   const [loading, setLoading] = useState(false)
   const [loadingAgent, setLoadingAgent] = useState(true)
   const [agentError, setAgentError] = useState(false)
-  const [sessionId] = useState(() => `agent-${params.id}-${Date.now()}`)
+  const [sessionId] = useState(() => `agent-${params?.id}-${Date.now()}`)
   const [showNewChatModal, setShowNewChatModal] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadAgent()
     loadMessages()
-  }, [params.id])
+  }, [params?.id])
 
   useEffect(() => {
     scrollToBottom()
@@ -56,7 +56,7 @@ export default function AgentChatPage() {
     try {
       setLoadingAgent(true)
       setAgentError(false)
-      const data = await agentsAPI.get(parseInt(params.id as string))
+      const data = await agentsAPI.get(parseInt(params?.id as string))
       setAgent(data)
     } catch (error) {
       console.error('Erro ao carregar agente:', error)
@@ -94,8 +94,8 @@ export default function AgentChatPage() {
     setLoading(true)
 
     try {
-      console.log('Enviando mensagem para agente ID:', params.id, 'Sessão:', sessionId)
-      const data = await agentsAPI.chat(parseInt(params.id as string), userMessage.content, sessionId)
+      console.log('Enviando mensagem para agente ID:', params?.id, 'Sessão:', sessionId)
+      const data = await agentsAPI.chat(parseInt(params?.id as string), userMessage.content, sessionId)
       console.log('Resposta recebida:', data)
       
       // Verificar diferentes formatos de resposta
@@ -324,7 +324,7 @@ export default function AgentChatPage() {
       <div className="bg-white border-t border-gray-200 px-6 py-4">
         <form onSubmit={sendMessage} className="max-w-4xl mx-auto space-y-3">
           {/* Disclaimer */}
-          <ChatDisclaimer storageKey={`chat-disclaimer-agent-${params.id}`} />
+          <ChatDisclaimer storageKey={`chat-disclaimer-agent-${params?.id}`} />
 
           <div className="flex gap-4">
             <input

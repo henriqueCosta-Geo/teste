@@ -15,8 +15,9 @@ export async function GET() {
     } = getSamlEnv();
 
     const sp_entity_id = SAML_SP_ENTITY_ID;
-    const sp_acs_url = "https://geoassistantrailway-production.up.railway.app/saml/acs/17"                       //`${APP_BASE_URL}/api/saml/acs`;
-    const sp_slo_url = "https://geoassistantrailway-production.up.railway.app/saml/logout/17" //`${APP_BASE_URL}/api/saml/logout`;
+    // ✅ Usar rota dinâmica do Pages Router: /saml/acs/17
+    const sp_acs_url = `${APP_BASE_URL}/saml/acs/17`;
+    const sp_slo_url = `${APP_BASE_URL}/saml/logout/17`;
     const name_id_format =
       SAML_NAMEID_FORMAT ?? "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress";
 

@@ -13,7 +13,7 @@ import type { Customer } from '@/lib/types'
 export default function EditCustomerPage() {
   const router = useRouter()
   const params = useParams()
-  const customerId = parseInt(params.id as string)
+  const customerId = parseInt(params?.id as string)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)

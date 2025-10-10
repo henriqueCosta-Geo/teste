@@ -38,7 +38,7 @@ export default function CustomerChatPage() {
   const params = useParams()
   const router = useRouter()
   const { data: session } = useSession()
-  const customerId = params.customerId as string
+  const customerId = params?.customerId as string
 
   const [team, setTeam] = useState<Team | null>(null)
   const [messages, setMessages] = useState<Message[]>([])

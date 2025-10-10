@@ -25,14 +25,14 @@ export default function CollectionDetailPage() {
   useEffect(() => {
     loadCollection()
     loadFiles()
-  }, [params.id])
+  }, [params?.id])
 
   const loadCollection = async () => {
     try {
-      if (!params.id) {
+      if (!params?.id) {
         throw new Error('ID da coleção não fornecido')
       }
-      const collectionId = parseInt(params.id as string)
+      const collectionId = parseInt(params?.id as string)
       if (isNaN(collectionId)) {
         throw new Error('ID da coleção inválido')
       }
@@ -48,11 +48,11 @@ export default function CollectionDetailPage() {
 
   const loadFiles = async () => {
     try {
-      if (!params.id) {
+      if (!params?.id) {
         setFiles([])
         return
       }
-      const collectionId = parseInt(params.id as string)
+      const collectionId = parseInt(params?.id as string)
       if (isNaN(collectionId)) {
         setFiles([])
         return
@@ -74,7 +74,7 @@ export default function CollectionDetailPage() {
     setUploadSuccess('')
 
     try {
-      const collectionId = parseInt(params.id as string)
+      const collectionId = parseInt(params?.id as string)
       if (isNaN(collectionId)) {
         throw new Error('ID da coleção inválido')
       }
@@ -118,7 +118,7 @@ export default function CollectionDetailPage() {
   const handleDeleteCollection = async () => {
     if (window.confirm(`Tem certeza que deseja deletar a coleção "${collection?.name}"? Esta ação não pode ser desfeita.`)) {
       try {
-        await collectionsAPI.delete(parseInt(params.id as string))
+        await collectionsAPI.delete(parseInt(params?.id as string))
         router.push('/collections')
       } catch (error: any) {
         alert(error.message || 'Erro ao deletar coleção')
@@ -137,7 +137,7 @@ export default function CollectionDetailPage() {
     setTestResults(null)
 
     try {
-      const collectionId = parseInt(params.id as string)
+      const collectionId = parseInt(params?.id as string)
       const results = await collectionsAPI.search(collectionId, testQuery.trim(), 5)
       setTestResults(results)
     } catch (error: any) {

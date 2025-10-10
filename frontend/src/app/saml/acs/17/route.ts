@@ -1,4 +1,3 @@
-// app/api/saml/acs/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { sp, idp } from "@/lib/saml/sp";
 import { getIronSession } from "iron-session";

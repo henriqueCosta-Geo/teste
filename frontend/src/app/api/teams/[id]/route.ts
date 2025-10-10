@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const resolvedParams = await params
-  const teamId = resolvedParams.id
+  const teamId = resolvedParams?.id
   
   console.log('🎯🎯🎯 TEAMS PROXY FUNCIONANDO! - ID:', teamId)
   console.log('🎯🎯🎯 URL completa:', request.url)

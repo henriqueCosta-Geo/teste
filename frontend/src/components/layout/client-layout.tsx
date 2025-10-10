@@ -14,7 +14,7 @@ interface ClientLayoutProps {
 }
 
 export default function ClientLayout({ children }: ClientLayoutProps) {
-  const pathname = usePathname()
+  const pathname = usePathname()??""
   const router = useRouter()
   const { data: session, status } = useSession()
 
@@ -72,7 +72,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             {/* Logo GeoCarbonite */}
             <div className="flex items-center flex-shrink-0">
               <img
-                src="/images/geocarbonite_logo.png"
+                src="./public/images/geocarbonite_logo.png"
                 alt="GeoCarbonite"
                 className="h-8 w-auto mr-3"
               />

@@ -33,7 +33,7 @@ RUN npx prisma@5.7.0 generate
 
 # Build da aplicação (com variáveis de ambiente dummy para SAML)
 ENV APP_BASE_URL="http://localhost:3000" \
-    SAML_SP_ENTITY_ID="http://localhost:3000/api/saml/metadata" \
+    SAML_SP_ENTITY_ID="http://localhost:3000/saml/metadata" \
     SAML_IDP_ENTITY_ID="dummy" \
     SAML_IDP_SSO_URL="http://localhost" \
     SAML_IDP_CERT="dummy" \

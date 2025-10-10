@@ -53,14 +53,14 @@ export default function TeamChatPage() {
   const [loading, setLoading] = useState(false)
   const [loadingTeam, setLoadingTeam] = useState(true)
   const [teamError, setTeamError] = useState(false)
-  const [sessionId] = useState(() => `team-${params.id}-${Date.now()}`)
+  const [sessionId] = useState(() => `team-${params?.id}-${Date.now()}`)
   const [streamingMessage, setStreamingMessage] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [showNewChatModal, setShowNewChatModal] = useState(false)
 
   // Obter customerId da query string (quando admin acessa via dashboard)
-  const customerIdFromQuery = searchParams.get('customerId')
+  const customerIdFromQuery = searchParams?.get('customerId')
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -70,7 +70,7 @@ export default function TeamChatPage() {
   useEffect(() => {
     loadTeam()
     loadMessages()
-  }, [params.id])
+  }, [params?.id])
 
   // Auto-scroll INTELIGENTE
   useEffect(() => {
@@ -109,20 +109,20 @@ export default function TeamChatPage() {
       setLoadingTeam(true)
       setTeamError(false)
 
-      if (!params.id) {
+      if (!params?.id) {
         console.error('❌ Nenhum ID de team fornecido')
         setTeamError(true)
         return
       }
 
-      const teamId = parseInt(params.id as string)
+      const teamId = parseInt(params?.id as string)
 
       if (isNaN(teamId)) {
-        console.log('🔍 ID não numérico detectado, tentando buscar por nome:', params.id)
+        console.log('🔍 ID não numérico detectado, tentando buscar por nome:', params?.id)
 
         try {
           const allTeams = await teamsAPI.list()
-          const decodedName = decodeURIComponent(params.id as string)
+          const decodedName = decodeURIComponent(params?.id as string)
 
           const foundTeam = allTeams.find((team: any) =>
             team.name === decodedName ||
@@ -138,7 +138,7 @@ export default function TeamChatPage() {
           console.error('Erro ao buscar teams por nome:', error)
         }
 
-        console.error('❌ ID de team inválido (não numérico):', params.id)
+        console.error('❌ ID de team inválido (não numérico):', params?.id)
         setTeamError(true)
         return
       }
@@ -199,9 +199,9 @@ export default function TeamChatPage() {
     }
 
     try {
-      console.log('Enviando tarefa para time ID:', params.id, 'Sessão:', sessionId)
+      console.log('Enviando tarefa para time ID:', params?.id, 'Sessão:', sessionId)
 
-      const teamId = parseInt(params.id as string)
+      const teamId = parseInt(params?.id as string)
       if (isNaN(teamId)) {
         throw new Error('ID do time inválido')
       }
@@ -315,7 +315,7 @@ export default function TeamChatPage() {
   }
 
   if (teamError || !team) {
-    const isInvalidId = isNaN(parseInt(params.id as string))
+    const isInvalidId = isNaN(parseInt(params?.id as string))
 
     return (
       <div className="flex flex-col items-center justify-center min-h-96">
@@ -325,7 +325,7 @@ export default function TeamChatPage() {
         </h3>
         <p className="text-gray-600 mb-6">
           {isInvalidId
-            ? `O ID "${params.id}" não é válido. IDs de team devem ser números.`
+            ? `O ID "${params?.id}" não é válido. IDs de team devem ser números.`
             : 'O time solicitado não existe ou não está disponível.'
           }
         </p>
@@ -551,7 +551,7 @@ export default function TeamChatPage() {
       <div className="bg-white border-t border-gray-200 shadow-lg flex-shrink-0">
         <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 py-3 sm:py-4 space-y-3">
           {/* Disclaimer */}
-          <ChatDisclaimer storageKey={`chat-disclaimer-team-${params.id}`} />
+          <ChatDisclaimer storageKey={`chat-disclaimer-team-${params?.id}`} />
 
           <form onSubmit={sendMessage}>
             <div className="flex gap-2 sm:gap-3 items-end">

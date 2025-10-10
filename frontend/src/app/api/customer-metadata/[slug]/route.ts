@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: { slug: string } }
 ) {
   try {
-    const customerSlug = params.slug
+    const customerSlug = params?.slug
 
     if (!customerSlug) {
       return NextResponse.json({ error: 'Slug é obrigatório' }, { status: 400 })

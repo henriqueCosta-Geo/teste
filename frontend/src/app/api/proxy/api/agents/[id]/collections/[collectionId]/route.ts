@@ -8,7 +8,7 @@ export async function DELETE(
 ) {
   try {
     const response = await fetch(
-      `${API_BASE_URL}/api/agents/${params.id}/collections/${params.collectionId}`,
+      `${API_BASE_URL}/api/agents/${params?.id}/collections/${params.collectionId}`,
       {
         method: 'DELETE',
       }

@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const response = await fetch(`${API_BASE_URL}/collections/${params.id}`, {
+    const response = await fetch(`${API_BASE_URL}/collections/${params?.id}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -36,7 +36,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const response = await fetch(`${API_BASE_URL}/collections/${params.id}`, {
+    const response = await fetch(`${API_BASE_URL}/collections/${params?.id}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',

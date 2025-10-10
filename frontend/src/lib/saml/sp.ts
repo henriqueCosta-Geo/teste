@@ -25,9 +25,10 @@ export const sp = saml.ServiceProvider({
   // ✅ usar o identifier esperado pelo Azure
   entityID: SAML_SP_ENTITY_ID,
   assertionConsumerService: [
-    { Binding: saml.Constants.namespace.binding.post, Location: `${APP_BASE_URL}/api/saml/acs` },
+    // ✅ Pages Router Dynamic API: /pages/saml/acs/[id].ts → /saml/acs/17
+    { Binding: saml.Constants.namespace.binding.post, Location: `${APP_BASE_URL}/saml/acs/17` },
   ],
   singleLogoutService: SAML_IDP_SLO_URL
-    ? [{ Binding: saml.Constants.namespace.binding.redirect, Location: `${APP_BASE_URL}/api/saml/logout` }]
+    ? [{ Binding: saml.Constants.namespace.binding.redirect, Location: `${APP_BASE_URL}/saml/logout/17` }]
     : undefined,
 });

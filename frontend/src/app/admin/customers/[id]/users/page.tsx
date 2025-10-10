@@ -32,7 +32,7 @@ interface UsersResponse {
 export default function CustomerUsersPage() {
   const params = useParams()
   const router = useRouter()
-  const customerId = parseInt(params.id as string)
+  const customerId = parseInt(params?.id as string)
 
   const [data, setData] = useState<UsersResponse | null>(null)
   const [loading, setLoading] = useState(true)

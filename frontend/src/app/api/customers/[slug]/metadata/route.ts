@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: { slug: string } }
 ) {
   try {
-    const customerSlug = params.slug
+    const customerSlug = params?.slug
 
     if (!customerSlug) {
       return NextResponse.json({ error: 'Customer slug é obrigatório' }, { status: 400 })
@@ -24,7 +24,7 @@ export async function GET(
     })
 
   } catch (error) {
-    console.error(`Erro ao buscar metadados do customer ${params.slug}:`, error)
+    console.error(`Erro ao buscar metadados do customer ${params?.slug}:`, error)
 
     // Se o customer não foi encontrado, retornar 404
     if (error instanceof Error && error.message.includes('não encontrado')) {

@@ -22,7 +22,7 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const customerId = parseInt(params.id)
+    const customerId = parseInt(params?.id)
 
     if (isNaN(customerId)) {
       return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
@@ -109,7 +109,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const customerId = parseInt(params.id)
+    const customerId = parseInt(params?.id)
 
     if (isNaN(customerId)) {
       return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
@@ -175,7 +175,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const customerId = parseInt(params.id)
+    const customerId = parseInt(params?.id)
 
     if (isNaN(customerId)) {
       return NextResponse.json({ error: 'ID inválido' }, { status: 400 })

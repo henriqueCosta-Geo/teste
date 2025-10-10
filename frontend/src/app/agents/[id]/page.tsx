@@ -10,7 +10,7 @@ import type { Agent, Collection } from '@/lib/types'
 export default function AgentConfigPage() {
   const router = useRouter()
   const params = useParams()
-  const agentId = parseInt(params.id as string)
+  const agentId = parseInt(params?.id as string)
 
   const [agent, setAgent] = useState<Agent | null>(null)
   const [collections, setCollections] = useState<Collection[]>([])

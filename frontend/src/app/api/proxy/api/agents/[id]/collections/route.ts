@@ -9,7 +9,7 @@ export async function POST(
   try {
     const body = await request.json()
 
-    const response = await fetch(`${API_BASE_URL}/api/agents/${params.id}/collections`, {
+    const response = await fetch(`${API_BASE_URL}/api/agents/${params?.id}/collections`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

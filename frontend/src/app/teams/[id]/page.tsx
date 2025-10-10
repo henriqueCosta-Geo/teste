@@ -42,17 +42,17 @@ export default function TeamDetailPage() {
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    if (params.id) {
+    if (params?.id) {
       loadTeam()
     }
-  }, [params.id])
+  }, [params?.id])
 
   const loadTeam = async () => {
     try {
       setLoading(true)
       setError(false)
       
-      const teamId = parseInt(params.id as string)
+      const teamId = parseInt(params?.id as string)
       if (isNaN(teamId)) {
         setError(true)
         return

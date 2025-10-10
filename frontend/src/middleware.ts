@@ -4,9 +4,35 @@ import { getToken } from "next-auth/jwt"
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Permitir todas as rotas API para teste
+  // Permitir explicitamente callbacks SAML do Azure AD (Pages Router API)
+  // Rotas dinâmicas: /saml/acs/17, /saml/logout/17, /saml/metadata
+  if (pathname.startsWith("/saml/")) {
+    const response = NextResponse.next()
+    // Confiar no host forwarded pelo Railway
+    const forwardedHost = req.headers.get('x-forwarded-host')
+    const forwardedProto = req.headers.get('x-forwarded-proto')
+    if (forwardedHost) {
+      response.headers.set('x-forwarded-host', forwardedHost)
+    }
+    if (forwardedProto) {
+      response.headers.set('x-forwarded-proto', forwardedProto)
+    }
+    return response
+  }
+
+  // Permitir todas as outras rotas API (incluindo NextAuth e Server Actions)
   if (pathname.startsWith("/api/")) {
-    return NextResponse.next()
+    const response = NextResponse.next()
+    // Garantir que headers do Railway sejam propagados
+    const forwardedHost = req.headers.get('x-forwarded-host')
+    const forwardedProto = req.headers.get('x-forwarded-proto')
+    if (forwardedHost) {
+      response.headers.set('x-forwarded-host', forwardedHost)
+    }
+    if (forwardedProto) {
+      response.headers.set('x-forwarded-proto', forwardedProto)
+    }
+    return response
   }
 
   const response = NextResponse.next()

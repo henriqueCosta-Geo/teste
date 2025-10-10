@@ -1,4 +1,4 @@
-// app/api/saml/login/route.ts
+// app/saml/login/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { sp, idp } from "@/lib/saml/sp";
 
