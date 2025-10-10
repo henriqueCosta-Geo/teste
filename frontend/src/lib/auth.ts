@@ -8,7 +8,71 @@ const prisma = new PrismaClient()
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as any,
   providers: [
+    // ✅ SAML SSO Provider - usado após autenticação via Azure AD
     CredentialsProvider({
+      id: "saml-sso",
+      name: "SAML SSO",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        userId: { label: "User ID", type: "text" }
+      },
+      async authorize(credentials) {
+        console.log('🔐 SAML SSO Auth attempt:', { email: credentials?.email, userId: credentials?.userId })
+
+        if (!credentials?.email || !credentials?.userId) {
+          console.log('❌ Missing SAML credentials')
+          return null
+        }
+
+        try {
+          // Buscar usuário pelo ID (já foi criado/validado no fluxo SAML)
+          const user = await prisma.users.findUnique({
+            where: {
+              id: parseInt(credentials.userId),
+              email: credentials.email,
+              is_active: true,
+              deleted_at: null
+            },
+            include: {
+              customer: true
+            }
+          })
+
+          console.log('👤 SAML User found:', { found: !!user })
+
+          if (!user) {
+            console.log('❌ SAML User not found or inactive')
+            return null
+          }
+
+          // Atualizar último login
+          await prisma.users.update({
+            where: { id: user.id },
+            data: { last_login: new Date() }
+          })
+
+          console.log('✅ SAML SSO successful for:', user.email)
+
+          return {
+            id: user.id.toString(),
+            email: user.email,
+            name: user.name,
+            image: user.image,
+            role: user.role,
+            customer_id: user.customer_id,
+            customer_slug: user.customer.slug,
+            customer_name: user.customer.name,
+            customer_plan: 'CUSTOM'
+          }
+        } catch (error) {
+          console.error('💥 SAML Auth error:', error)
+          return null
+        }
+      }
+    }),
+    // Provider original de credenciais (login com email/senha)
+    CredentialsProvider({
+      id: "credentials",
       name: "credentials",
       credentials: {
         email: { label: "Email", type: "email" },
