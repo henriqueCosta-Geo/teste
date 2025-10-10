@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ♻️ Cria sessão e redireciona
-    const res = NextResponse.redirect(new URL("/app", req.url));
+    const res = NextResponse.redirect(new URL("/", req.url));
     const session = await getIronSession<{ user?: { id: string; email?: string | null; name?: string | null } }>(req, res, sessionOptions);
 
     // Observação: seu serviço retorna { id: number; email: string; name: string | null }

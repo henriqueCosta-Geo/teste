@@ -33,7 +33,7 @@ export async function createUserIfNotExistsStrict(params: CreateUserParams) {
   }
 
   // Cria novo usuário
-  const username = email.split("@")[0] + "_" + Date.now(); // Gera username único
+  const username = email.split("@")[0]; // Gera username único
 
   const newUser = await prisma.users.create({
     data: {

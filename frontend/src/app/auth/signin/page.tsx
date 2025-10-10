@@ -23,10 +23,10 @@ const handleCorporateLogin = useCallback(() => {
 
       // Monte o "returnTo" como quiser. Exemplo: volta para /app; se tiver cliente, volta para /app/<cliente>
       const returnTo =
-        customer && customer.trim().length > 0 ? `/app/${encodeURIComponent(customer)}` : "/app";
+        customer && customer.trim().length > 0 ? `//${encodeURIComponent(customer)}` : "/";
 
       // Redirect completo (fora do SPA) para o IdP via nosso endpoint
-      const url = `/api/saml/login?returnTo=${encodeURIComponent(returnTo)}`;
+      const url = `/saml/login?returnTo=${encodeURIComponent(returnTo)}`;
       window.location.href = url;
     } catch (e) {
       console.error("❌ Erro ao iniciar SSO:", e);

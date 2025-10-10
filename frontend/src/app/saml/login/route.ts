@@ -13,8 +13,8 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     // Aceite apenas paths internos (mitiga open redirect)
-    const rawReturnTo = url.searchParams.get("returnTo") ?? "/app";
-    const returnTo = rawReturnTo.startsWith("/") ? rawReturnTo : "/app";
+    const rawReturnTo = url.searchParams.get("returnTo") ?? "/";
+    const returnTo = rawReturnTo.startsWith("/") ? rawReturnTo : "/";
 
     // Gera a URL do IdP com SAMLRequest + SigAlg + Signature
     const { context } = await sp.createLoginRequest(idp, "redirect");

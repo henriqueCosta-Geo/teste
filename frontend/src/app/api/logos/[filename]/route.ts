@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: { filename: string } }
 ) {
   try {
-    const filename = params.filename
+    const filename = params?.filename
 
     // Validar nome do arquivo para segurança
     if (!filename || filename.includes('..') || filename.includes('/')) {
