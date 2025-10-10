@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { LogIn, Eye, EyeOff } from 'lucide-react'
 import { Button } from "primereact/button";
 import { useState, useCallback } from "react";
+import Image from "next/image";
 
 export default function SignInPage({ searchParams }: { searchParams: { customer?: string } }) {
   const customer = searchParams?.customer;
@@ -75,11 +76,13 @@ const handleCorporateLogin = useCallback(() => {
       {/* Lado Esquerdo - Background SVG (60%) */}
       <div
         className="hidden lg:flex lg:w-3/5 bg-cover bg-center bg-no-repeat"
-        style={{
-          backgroundImage: 'url(/images/login_background.svg)',
-          backgroundColor: '#f8fafc' // Fallback color
-        }}
-      >
+        >
+        <Image
+          src="/login_background.svg"
+          alt="Background"
+          className="object-cover"
+          priority
+        />
         {/* Apenas o background SVG, sem conteúdo adicional */}
       </div>
 
@@ -88,10 +91,11 @@ const handleCorporateLogin = useCallback(() => {
         <div className="max-w-md w-full space-y-8 p-8">
           {/* Logo GeoCarbonite - sempre visível no lado direito */}
           <div className="text-center">
-            <img
-              src="./public/images/geocarbonite_logo.png"
+            <Image
+              src="/troubleshooter_logo.svg"
               alt="GeoCarbonite"
               className="h-32 w-auto mx-auto mb-6"
+              priority
             />
             <h2 className="text-xl font-semibold text-gray-600 mb-2">
               Sistema Inteligente de Suporte

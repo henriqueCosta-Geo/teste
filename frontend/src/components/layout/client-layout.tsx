@@ -8,6 +8,7 @@ import StatusBar from '@/components/layout/status-bar'
 import { CompactThemeToggle } from '@/components/ui/theme-toggle'
 import { signOut } from 'next-auth/react'
 import { useEffect } from 'react'
+import Image from "next/image";
 
 interface ClientLayoutProps {
   children: React.ReactNode
@@ -71,10 +72,11 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           <div className="flex justify-between items-center h-16">
             {/* Logo GeoCarbonite */}
             <div className="flex items-center flex-shrink-0">
-              <img
-                src="./public/images/geocarbonite_logo.png"
+              <Image
+                src="/troubleshooter_logo.svg"
                 alt="GeoCarbonite"
-                className="h-8 w-auto mr-3"
+                className="h-32 w-auto mx-auto mb-6"
+                priority
               />
             </div>
 

@@ -234,7 +234,6 @@ dist
 
 # Gatsby files
 .cache/
-public
 
 # Storybook build outputs
 .out
@@ -292,14 +291,6 @@ docker-compose.override.yml
 
 # Uploads de usuários
 uploads/
-public/uploads/
-frontend/public/uploads/
-
-# Logos uploadados
-public/logos/*
-frontend/public/logos/*
-!public/logos/.gitkeep
-!frontend/public/logos/.gitkeep
 
 # Arquivos temporários
 *.tmp

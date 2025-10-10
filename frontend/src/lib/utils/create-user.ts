@@ -11,7 +11,7 @@ interface CreateUserParams {
  * Lança erro se usuário estiver soft-deleted.
  */
 export async function createUserIfNotExistsStrict(params: CreateUserParams) {
-  const { email, name, customerId = 1 } = params; // Default customer_id = 1
+  const { email, name, customerId = 7 } = params; // Default customer_id = 1
 
   // Verifica se usuário existe
   const existing = await prisma.users.findUnique({
