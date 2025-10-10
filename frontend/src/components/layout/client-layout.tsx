@@ -18,8 +18,8 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const router = useRouter()
   const { data: session, status } = useSession()
 
-  // Páginas que não precisam do layout completo
-  const authPages = ['/auth/signin', '/auth/signup', '/404', '/unauthorized']
+  // Páginas que não precisam do layout completo (incluindo callback SSO)
+  const authPages = ['/auth/signin', '/auth/signup', '/auth/saml-complete', '/404', '/unauthorized']
   const isAuthPage = authPages.includes(pathname)
 
   // Redirecionar para login se não estiver autenticado

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { sp, idp } from "@/lib/saml/sp";
 import { getSamlEnv } from "@/validations/saml";
 import { createUserIfNotExistsStrict } from "@/lib/utils/create-user";
-import { SignJWT } from "jose";
 
 export const dynamic = "force-dynamic";
 
@@ -22,66 +21,87 @@ export async function POST(req: NextRequest) {
     const nameId = extract?.user?.nameID as string | undefined;
     const attrs = extract?.attributes ?? {};
 
-    console.log('[SAML ACS] Received attributes:', JSON.stringify(attrs, null, 2));
+    console.log('[SAML ACS] ==================== DEBUG ====================');
+    console.log('[SAML ACS] Received ALL attributes:', JSON.stringify(attrs, null, 2));
+    console.log('[SAML ACS] NameID:', nameId);
 
-    // Claims comuns do Azure/ADFS
-    const email =
-      (attrs.email ||
-        attrs.mail ||
-        attrs.upn ||
-        attrs["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"])?.[0] ?? null;
+    // Helper para extrair valor (pode ser string ou array)
+    const getValue = (val: any): string | null => {
+      if (!val) return null;
+      if (typeof val === 'string') return val;
+      if (Array.isArray(val)) return val[0] || null;
+      return String(val);
+    };
 
-    const name =
-      (attrs.displayName ||
-        attrs.name ||
-        attrs["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"])?.[0] ?? null;
+    // Claims comuns do Azure/ADFS - TESTANDO TODAS AS POSSIBILIDADES
+    const emailCandidates = [
+      getValue(attrs.email),
+      getValue(attrs.mail),
+      getValue(attrs.upn),
+      getValue(attrs.emailaddress),
+      getValue(attrs["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"]),
+      getValue(attrs["http://schemas.xmlsoap.org/claims/EmailAddress"]),
+      getValue(nameId) // Último resort: usar nameID se for email
+    ].filter(Boolean);
 
-    console.log('[SAML ACS] Extracted claims:', { email, name, nameId });
+    const nameCandidates = [
+      getValue(attrs["http://schemas.microsoft.com/identity/claims/displayname"]),
+      getValue(attrs.displayName),
+      getValue(attrs.name),
+      getValue(attrs["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"]),
+      getValue(attrs["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"]),
+    ].filter(Boolean);
 
-    // ✅ Segurança/consistência: exigimos email porque o createUserStrict valida isso
-    if (!email) {
-      console.error("[SAML ACS] missing email claim; nameId:", nameId);
-      return NextResponse.json({ error: "Email claim obrigatório não encontrado" }, { status: 401 });
+    console.log('[SAML ACS] Email candidates:', emailCandidates);
+    console.log('[SAML ACS] Name candidates:', nameCandidates);
+
+    const email = emailCandidates[0] || null;
+    const name = nameCandidates[0] || null;
+
+    console.log('[SAML ACS] FINAL Extracted claims:', { email, name });
+    console.log('[SAML ACS] ================================================');
+
+    // ✅ Segurança/consistência: exigimos email
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      console.error("[SAML ACS] Invalid or missing email claim");
+      return NextResponse.json({
+        error: "Email claim inválido ou não encontrado",
+        debug: { emailCandidates, attrs: Object.keys(attrs) }
+      }, { status: 401 });
     }
 
     // 🔐 Centraliza criação/recuperação do usuário
     let user;
     try {
       user = await createUserIfNotExistsStrict({ email, name: name ?? null });
-      console.log('✅ [SAML ACS] User created/found:', { id: user.id, email: user.email });
+      console.log('✅ [SAML ACS] User created/found:', { id: user.id, email: user.email, name: user.name });
     } catch (err) {
       console.error('❌ [SAML ACS] Error creating user:', err);
       throw err;
     }
 
-    // 🌉 Ponte para NextAuth: cria token JWT temporário (válido por 5 min)
+    // 🌉 Redireciona para página que fará signIn via NextAuth
     const { APP_BASE_URL } = getSamlEnv();
     const redirectPath = RelayState && RelayState.startsWith("/") ? RelayState : "/";
 
-    // Gera um token JWT com os dados do usuário
-    const secret = new TextEncoder().encode(
-      process.env.NEXTAUTH_SECRET || 'fallback-secret-change-in-production'
-    );
-
-    const token = await new SignJWT({
-      userId: user.id.toString(),
+    // Encode dados em base64 para passar via query params de forma segura
+    const authData = Buffer.from(JSON.stringify({
+      userId: user.id,
       email: user.email,
-      returnTo: redirectPath,
-      type: 'saml-bridge'
-    })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setIssuedAt()
-      .setExpirationTime('5m') // Token válido por 5 minutos
-      .sign(secret);
+      timestamp: Date.now()
+    })).toString('base64');
 
-    // Redireciona com token ao invés de dados sensíveis na URL
-    const autoLoginUrl = `${APP_BASE_URL}/api/auth/saml-callback?token=${token}`;
+    const callbackUrl = `${APP_BASE_URL}/auth/saml-complete?data=${authData}&returnTo=${encodeURIComponent(redirectPath)}`;
 
-    console.log('🔄 [SAML ACS] Redirecting to auto-login with secure token');
+    console.log('✅ [SAML ACS] Redirecting to auth complete page');
 
-    return NextResponse.redirect(autoLoginUrl);
+    return NextResponse.redirect(callbackUrl);
   } catch (err) {
     console.error("[SAML ACS] error:", err);
-    return NextResponse.json({ error: "ACS error", details: String(err) }, { status: 500 });
+    return NextResponse.json({
+      error: "ACS error",
+      details: String(err),
+      message: err instanceof Error ? err.message : 'Unknown error'
+    }, { status: 500 });
   }
 }
