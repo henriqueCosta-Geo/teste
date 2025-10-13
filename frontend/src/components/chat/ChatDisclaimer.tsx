@@ -6,23 +6,32 @@ import { AlertCircle, X } from 'lucide-react'
 interface ChatDisclaimerProps {
   storageKey?: string
   className?: string
+  dismissible?: boolean
 }
 
 export default function ChatDisclaimer({
   storageKey = 'chat-disclaimer-dismissed',
-  className = ''
+  className = '',
+  dismissible = true
 }: ChatDisclaimerProps) {
   const [isVisible, setIsVisible] = useState(true)
 
   useEffect(() => {
+    // Se não for dismissível, sempre manter visível
+    if (!dismissible) {
+      setIsVisible(true)
+      return
+    }
+
     // Verificar se o usuário já dispensou o disclaimer
     const dismissed = localStorage.getItem(storageKey)
     if (dismissed === 'true') {
       setIsVisible(false)
     }
-  }, [storageKey])
+  }, [storageKey, dismissible])
 
   const handleDismiss = () => {
+    if (!dismissible) return // Não permitir fechar se não for dismissível
     localStorage.setItem(storageKey, 'true')
     setIsVisible(false)
   }
@@ -41,13 +50,15 @@ export default function ChatDisclaimer({
           </p>
         </div>
 
-        <button
-          onClick={handleDismiss}
-          className="p-1 hover:bg-amber-100 rounded transition-colors flex-shrink-0"
-          title="Não mostrar novamente"
-        >
-          <X className="w-4 h-4 text-amber-600" />
-        </button>
+        {dismissible && (
+          <button
+            onClick={handleDismiss}
+            className="p-1 hover:bg-amber-100 rounded transition-colors flex-shrink-0"
+            title="Não mostrar novamente"
+          >
+            <X className="w-4 h-4 text-amber-600" />
+          </button>
+        )}
       </div>
     </div>
   )

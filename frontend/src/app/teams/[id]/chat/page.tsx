@@ -10,6 +10,7 @@ import MessageFeedback from '@/components/chat/MessageFeedback'
 import CopyButton from '@/components/chat/CopyButton'
 import ChatDisclaimer from '@/components/chat/ChatDisclaimer'
 import NewChatConfirmModal from '@/components/chat/NewChatConfirmModal'
+import ChatWelcomeWatermark from '@/components/chat/ChatWelcomeWatermark'
 
 interface Message {
   id: string
@@ -129,32 +130,12 @@ export default function TeamChatPage() {
       const teamId = parseInt(params?.id as string)
 
       if (isNaN(teamId)) {
-        console.log('🔍 ID não numérico detectado, tentando buscar por nome:', params?.id)
-
-        try {
-          const allTeams = await teamsAPI.list()
-          const decodedName = decodeURIComponent(params?.id as string)
-
-          const foundTeam = allTeams.find((team: any) =>
-            team.name === decodedName ||
-            team.name.toLowerCase() === decodedName.toLowerCase()
-          )
-
-          if (foundTeam) {
-            console.log(`✅ Team encontrado pelo nome, redirecionando para ID ${foundTeam.id}`)
-            window.location.replace(`/teams/${foundTeam.id}/chat`)
-            return
-          }
-        } catch (error) {
-          console.error('Erro ao buscar teams por nome:', error)
-        }
-
         console.error('❌ ID de team inválido (não numérico):', params?.id)
         setTeamError(true)
         return
       }
 
-      console.log('✅ Carregando team ID:', teamId)
+      console.log('🔍 Carregando team ID:', teamId)
       const data = await teamsAPI.get(teamId)
       console.log('✅ Team carregado:', data)
       setTeam(data)
@@ -452,10 +433,11 @@ export default function TeamChatPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowNewChatModal(true)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-md hover:shadow-lg"
               title="Nova conversa"
             >
               <MessageSquarePlus size={20} />
+              <span className="hidden sm:inline font-medium">Nova Conversa</span>
             </button>
           </div>
         </div>
@@ -466,17 +448,17 @@ export default function TeamChatPage() {
         ref={messagesContainerRef}
         className="flex-1 overflow-y-auto relative"
       >
-        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 py-4 sm:py-6 space-y-3 sm:space-y-4">
+        {/* Watermark de boas-vindas - Por trás das mensagens */}
+        {messages.length === 0 && customerMetadata?.name && (
+          <ChatWelcomeWatermark
+            customerName={customerMetadata.name}
+            storageKey={`chat-welcome-team-${params?.id}`}
+          />
+        )}
+
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 py-4 sm:py-6 space-y-3 sm:space-y-4 relative z-10">
           {messages.length === 0 ? (
-            <div className="text-center py-8 sm:py-12">
-              <Users size={48} className="mx-auto text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Inicie uma conversa
-              </h3>
-              <p className="text-gray-600">
-                Digite sua mensagem abaixo para começar
-              </p>
-            </div>
+            <div className="h-full"></div>
           ) : (
             messages.map((message) => (
               <div
@@ -623,9 +605,6 @@ export default function TeamChatPage() {
       {/* Input Area - FIXO NO RODAPÉ */}
       <div className="bg-white border-t border-gray-200 shadow-lg flex-shrink-0">
         <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 py-3 sm:py-4 space-y-3">
-          {/* Disclaimer */}
-          <ChatDisclaimer storageKey={`chat-disclaimer-team-${params?.id}`} />
-
           <form onSubmit={sendMessage}>
             <div className="flex gap-2 sm:gap-3 items-end">
               <div className="flex-1 min-w-0">
@@ -657,6 +636,12 @@ export default function TeamChatPage() {
               </button>
             </div>
           </form>
+
+          {/* Disclaimer - ABAIXO do input, não dismissível */}
+          <ChatDisclaimer
+            storageKey={`chat-disclaimer-team-${params?.id}`}
+            dismissible={false}
+          />
         </div>
       </div>
 

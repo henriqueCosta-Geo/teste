@@ -503,9 +503,6 @@ export default function CustomerChatPage() {
       {/* Input Area - TEXTAREA AUTO-EXPANSÍVEL */}
       <div className="bg-white border-t border-gray-200 shadow-lg flex-shrink-0">
         <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 py-3 sm:py-4 space-y-3">
-          {/* Disclaimer */}
-          <ChatDisclaimer storageKey={`chat-disclaimer-${customerId}`} />
-
           <div className="flex gap-2 sm:gap-3 items-end">
             <div className="flex-1 min-w-0">
               <textarea
@@ -536,6 +533,12 @@ export default function CustomerChatPage() {
               )}
             </button>
           </div>
+
+          {/* Disclaimer - ABAIXO do input, não dismissível */}
+          <ChatDisclaimer
+            storageKey={`chat-disclaimer-${customerId}`}
+            dismissible={false}
+          />
         </div>
       </div>
 

@@ -1,52 +1,81 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const resolvedParams = await params
-  const teamId = resolvedParams?.id
-  
-  console.log('🎯🎯🎯 TEAMS PROXY FUNCIONANDO! - ID:', teamId)
-  console.log('🎯🎯🎯 URL completa:', request.url)
-  console.log('🎯🎯🎯 Params recebidos:', resolvedParams)
-  
+  const teamIdParam = resolvedParams?.id
+
+  console.log('🔍 [TEAMS-API-GET] Buscando team por ID:', teamIdParam)
+
   try {
-    const url = `${API_BASE_URL}/api/agents/teams/${teamId}`
-    console.log('🔗 Chamando backend:', url)
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    
-    console.log('📡 Backend response:', {
-      status: response.status,
-      statusText: response.statusText
-    })
-    
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('❌ Erro do backend:', errorText)
+    const session = await getServerSession(authOptions)
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Validar se o ID é numérico
+    const teamId = parseInt(teamIdParam)
+
+    if (isNaN(teamId)) {
+      console.error('❌ ID inválido (não numérico):', teamIdParam)
       return NextResponse.json(
-        { error: `Backend error: ${response.status}` },
-        { status: response.status }
+        { error: 'ID inválido. Deve ser um número.' },
+        { status: 400 }
       )
     }
-    
-    const data = await response.json()
-    console.log('✅ Dados recebidos do backend:', data)
-    
-    return NextResponse.json(data)
-    
+
+    // Buscar team no PostgreSQL via Prisma
+    const team = await prisma.agentTeams.findUnique({
+      where: { id: teamId },
+      include: {
+        leader: {
+          select: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        members: {
+          include: {
+            agent: {
+              select: {
+                id: true,
+                name: true,
+                role: true
+              }
+            }
+          }
+        },
+        _count: {
+          select: {
+            members: true
+          }
+        }
+      }
+    })
+
+    if (!team) {
+      console.error('❌ Team não encontrado no banco:', teamId)
+      return NextResponse.json(
+        { error: 'Team não encontrado' },
+        { status: 404 }
+      )
+    }
+
+    console.log('✅ Team encontrado no Prisma:', team.name, `(${team.members.length} membros)`)
+
+    return NextResponse.json(team)
+
   } catch (error) {
-    console.error('❌ Erro no proxy:', error)
+    console.error('❌ Erro ao buscar team:', error)
     return NextResponse.json(
-      { error: 'Proxy error', details: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Erro interno do servidor', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     )
   }

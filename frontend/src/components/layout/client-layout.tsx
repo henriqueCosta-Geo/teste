@@ -3,11 +3,11 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
-import { Database, Bot, Search, Home, LogOut, User, Users } from 'lucide-react'
+import { Database, Bot, Search, Home, LogOut, User, Users, BarChart3, MessageSquare } from 'lucide-react'
 import StatusBar from '@/components/layout/status-bar'
 import { CompactThemeToggle } from '@/components/ui/theme-toggle'
 import { signOut } from 'next-auth/react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Image from "next/image";
 
 interface ClientLayoutProps {
@@ -18,6 +18,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const pathname = usePathname()??""
   const router = useRouter()
   const { data: session, status } = useSession()
+  const [customerTeamId, setCustomerTeamId] = useState<number | null>(null)
 
   // Páginas que não precisam do layout completo (incluindo callback SSO)
   const authPages = ['/auth/signin', '/auth/signup', '/auth/saml-complete', '/404', '/unauthorized']
@@ -32,6 +33,51 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       return
     }
   }, [session, status, isAuthPage, router])
+
+  // Carregar team do customer (se for customer)
+  useEffect(() => {
+    const loadCustomerTeam = async () => {
+      if (!session?.user?.customer_id) return
+
+      try {
+        // Buscar customer
+        const customerResponse = await fetch(`/api/admin/customers/${session.user.customer_id}`)
+        if (!customerResponse.ok) return
+
+        const customer = await customerResponse.json()
+
+        // Buscar metadata
+        const metadataResponse = await fetch(`/api/customer-metadata/${customer.slug}`)
+        if (!metadataResponse.ok) return
+
+        const metadata = await metadataResponse.json()
+        const defaultTeam = metadata?.chat?.default_team
+
+        if (!defaultTeam) return
+
+        // Se for número, usar direto
+        if (typeof defaultTeam === 'number' || !isNaN(Number(defaultTeam))) {
+          setCustomerTeamId(Number(defaultTeam))
+          return
+        }
+
+        // Se for nome, buscar ID
+        const teamsResponse = await fetch('/api/teams')
+        if (!teamsResponse.ok) return
+
+        const teams = await teamsResponse.json()
+        const team = teams.find((t: any) => t.name === defaultTeam)
+
+        if (team) {
+          setCustomerTeamId(team.id)
+        }
+      } catch (error) {
+        console.error('Erro ao carregar team do customer:', error)
+      }
+    }
+
+    loadCustomerTeam()
+  }, [session?.user?.customer_id])
 
   // Se é página de auth, renderizar apenas o conteúdo
   if (isAuthPage) {
@@ -77,21 +123,63 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
             {/* Navigation */}
             <nav className="flex space-x-4 lg:space-x-8 overflow-x-auto">
-              <Link
-                href="/"
-                className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
-                  pathname === '/'
-                    ? 'border-b-2'
-                    : 'hover:opacity-75'
-                }`}
-                style={{
-                  color: pathname === '/' ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                  borderBottomColor: pathname === '/' ? 'var(--accent-primary)' : 'transparent'
-                }}
-              >
-                <Home size={16} />
-                Home
-              </Link>
+              {/* Toggle Dash <-> Chat para customers, Home simples para outros */}
+              {session.user?.customer_id ? (
+                <div className="flex items-center gap-1 rounded-lg p-1" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                  <Link
+                    href="/"
+                    className={`px-3 py-1.5 text-xs lg:text-sm font-medium flex items-center gap-2 transition-all rounded-md ${
+                      pathname === '/' ? 'shadow-sm' : ''
+                    }`}
+                    style={{
+                      backgroundColor: pathname === '/' ? 'var(--bg-primary)' : 'transparent',
+                      color: pathname === '/' ? 'var(--accent-primary)' : 'var(--text-secondary)'
+                    }}
+                  >
+                    <BarChart3 size={16} />
+                    Dash
+                  </Link>
+                  {customerTeamId ? (
+                    <Link
+                      href={`/teams/${customerTeamId}/chat?customerId=${session.user.customer_id}`}
+                      className={`px-3 py-1.5 text-xs lg:text-sm font-medium flex items-center gap-2 transition-all rounded-md ${
+                        pathname.includes('/chat') ? 'shadow-sm' : ''
+                      }`}
+                      style={{
+                        backgroundColor: pathname.includes('/chat') ? 'var(--bg-primary)' : 'transparent',
+                        color: pathname.includes('/chat') ? 'var(--accent-primary)' : 'var(--text-secondary)'
+                      }}
+                    >
+                      <MessageSquare size={16} />
+                      Chat
+                    </Link>
+                  ) : (
+                    <div
+                      className="px-3 py-1.5 text-xs lg:text-sm font-medium flex items-center gap-2 rounded-md opacity-50 cursor-not-allowed"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      <MessageSquare size={16} />
+                      Chat
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Link
+                  href="/"
+                  className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
+                    pathname === '/'
+                      ? 'border-b-2'
+                      : 'hover:opacity-75'
+                  }`}
+                  style={{
+                    color: pathname === '/' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    borderBottomColor: pathname === '/' ? 'var(--accent-primary)' : 'transparent'
+                  }}
+                >
+                  <Home size={16} />
+                  Home
+                </Link>
+              )}
 
               {/* SUPER_USER vê todas as funcionalidades */}
               {session.user?.role === 'SUPER_USER' && (
@@ -174,22 +262,25 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                 </>
               )}
 
-              {/* ADMIN e REGULAR só veem busca */}
-              <Link
-                href="/search"
-                className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
-                  pathname.startsWith('/search')
-                    ? 'border-b-2'
-                    : 'hover:opacity-75'
-                }`}
-                style={{
-                  color: pathname.startsWith('/search') ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                  borderBottomColor: pathname.startsWith('/search') ? 'var(--accent-primary)' : 'transparent'
-                }}
-              >
-                <Search size={16} />
-                Busca
-              </Link>
+              {/* Busca - APENAS para SUPER_USER e ADMIN internos (sem customer_id) */}
+              {(session.user?.role === 'SUPER_USER' ||
+                (session.user?.role === 'ADMIN' && !session.user?.customer_id)) && (
+                <Link
+                  href="/search"
+                  className={`px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium flex items-center gap-1 lg:gap-2 transition-colors whitespace-nowrap ${
+                    pathname.startsWith('/search')
+                      ? 'border-b-2'
+                      : 'hover:opacity-75'
+                  }`}
+                  style={{
+                    color: pathname.startsWith('/search') ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    borderBottomColor: pathname.startsWith('/search') ? 'var(--accent-primary)' : 'transparent'
+                  }}
+                >
+                  <Search size={16} />
+                  Busca
+                </Link>
+              )}
             </nav>
 
             {/* User Menu */}
@@ -215,27 +306,10 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         </div>
       </header>
 
-      {/* Main Content - SCROLL INDEPENDENTE ENTRE HEADER E FOOTER */}
+      {/* Main Content - SCROLL INDEPENDENTE */}
       <main className="flex-1 overflow-y-auto">
         {children}
       </main>
-
-      {/* Footer FIXO NO RODAPÉ */}
-      <footer className="border-t flex-shrink-0" style={{
-        backgroundColor: 'var(--bg-primary)',
-        borderColor: 'var(--border-primary)'
-      }}>
-        <div className="max-w-full mx-auto py-3 lg:py-4 px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col lg:flex-row justify-between items-center gap-2">
-            <p className="text-xs lg:text-sm text-center lg:text-left" style={{ color: 'var(--text-tertiary)' }}>
-              GeoCarbonite v1.0.0 - Sistema Inteligente de Suporte Técnico
-            </p>
-            <div className="flex items-center gap-4 text-xs lg:text-sm" style={{ color: 'var(--text-tertiary)' }}>
-              <span>© 2024 GeoCarbonite</span>
-            </div>
-          </div>
-        </div>
-      </footer>
     </div>
   )
 }
