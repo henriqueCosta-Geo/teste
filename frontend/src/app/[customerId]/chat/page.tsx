@@ -446,6 +446,7 @@ export default function CustomerChatPage() {
                       <MessageFeedback
                         chatId={sessionId}
                         messageId={message.id}
+                        messageContent={message.content}
                       />
                     </div>
                   )}

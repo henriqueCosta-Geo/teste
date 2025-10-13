@@ -289,6 +289,7 @@ export default function AgentChatPage() {
                     <MessageFeedback
                       chatId={sessionId}
                       messageId={message.id}
+                      messageContent={message.content}
                     />
                   )}
                 </div>

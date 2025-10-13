@@ -421,7 +421,9 @@ export default function TeamChatPage() {
               )}
               <div className="min-w-0 flex-1">
                 <h1 className="text-sm sm:text-base md:text-xl font-semibold text-gray-900 truncate">
-                  {customerMetadata?.name || team.name}
+                  {customerMetadata?.name
+                    ? `Assistente Inteligente ${customerMetadata.name}`
+                    : team.name}
                 </h1>
                 <p className="text-xs sm:text-sm text-gray-500 truncate">
                   {team.members.length} agentes especializados
@@ -485,27 +487,13 @@ export default function TeamChatPage() {
 
                   {/* Message Bubble */}
                   <div className="flex flex-col gap-1 min-w-0 flex-1">
-                    {message.role === 'assistant' && message.agent_name && (
-                      <div className="flex items-center gap-2 px-2 sm:px-3">
-                        <span className="text-xs font-medium text-gray-600">
-                          {message.agent_name}
-                        </span>
-                      </div>
-                    )}
-
                     <div
-                      className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-3 shadow-sm relative group ${
+                      className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-3 shadow-sm ${
                         message.role === 'user'
                           ? 'bg-green-600 text-white'
                           : 'bg-white text-gray-900 border border-gray-200'
                       }`}
                     >
-                      {message.role === 'assistant' && (
-                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <CopyButton content={message.content} />
-                        </div>
-                      )}
-
                       {message.role === 'user' ? (
                         <p className="whitespace-pre-wrap text-sm sm:text-base">{message.content}</p>
                       ) : (
@@ -519,6 +507,7 @@ export default function TeamChatPage() {
                         <MessageFeedback
                           chatId={sessionId}
                           messageId={message.id}
+                          messageContent={message.content}
                         />
                       </div>
                     )}
@@ -527,7 +516,8 @@ export default function TeamChatPage() {
                       <span className="text-xs text-gray-400">
                         {new Date(message.timestamp).toLocaleTimeString('pt-BR', {
                           hour: '2-digit',
-                          minute: '2-digit'
+                          minute: '2-digit',
+                          second: '2-digit'
                         })}
                       </span>
                     </div>
@@ -548,7 +538,7 @@ export default function TeamChatPage() {
                   <div className="flex items-center gap-2 mb-2">
                     <Loader size={16} className="animate-spin text-green-600" />
                     <span className="font-medium text-sm">
-                      {isStreaming ? 'Respondendo...' : 'Processando...'}
+                      {isStreaming ? 'Buscando resposta...' : 'Pensando...'}
                     </span>
                   </div>
 

@@ -62,10 +62,13 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
         },
         // Estilização de listas
         ul({ children }) {
-          return <ul className="list-disc list-inside mb-4 space-y-1">{children}</ul>
+          return <ul className="list-disc list-outside ml-6 mb-4 space-y-2">{children}</ul>
         },
         ol({ children }) {
-          return <ol className="list-decimal list-inside mb-4 space-y-1">{children}</ol>
+          return <ol className="list-decimal list-outside ml-6 mb-4 space-y-2">{children}</ol>
+        },
+        li({ children }) {
+          return <li className="pl-2">{children}</li>
         },
         // Estilização de parágrafos
         p({ children }) {

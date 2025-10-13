@@ -3,10 +3,12 @@
 import React, { useState } from 'react'
 import { ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react'
 import { chatAPI } from '@/lib/api'
+import CopyButton from './CopyButton'
 
 interface MessageFeedbackProps {
   chatId: string
   messageId: string
+  messageContent: string
   initialFeedback?: 'positive' | 'negative' | null
   onFeedbackSubmit?: (feedback: 'positive' | 'negative') => void
 }
@@ -14,6 +16,7 @@ interface MessageFeedbackProps {
 export default function MessageFeedback({
   chatId,
   messageId,
+  messageContent,
   initialFeedback = null,
   onFeedbackSubmit
 }: MessageFeedbackProps) {
@@ -96,6 +99,9 @@ export default function MessageFeedback({
               <ThumbsDown className="w-4 h-4" />
             )}
           </button>
+
+          {/* Botão de copiar */}
+          <CopyButton content={messageContent} size={14} />
 
           {!feedback && (
             <span className="text-xs text-gray-400 ml-1">
