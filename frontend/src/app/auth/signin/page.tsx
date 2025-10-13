@@ -92,7 +92,7 @@ const handleCorporateLogin = useCallback(() => {
           {/* Logo GeoCarbonite - sempre visível no lado direito */}
           <div className="text-center">
             <Image
-              src="/troubleshooter_logo.svg"
+              src="/geocarbonite_logo.png"
               alt="GeoCarbonite"
               className="h-32 w-auto mx-auto mb-6"
               priority

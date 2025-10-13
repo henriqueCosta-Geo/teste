@@ -72,12 +72,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           <div className="flex justify-between items-center h-16">
             {/* Logo GeoCarbonite */}
             <div className="flex items-center flex-shrink-0">
-              <Image
-                src="/troubleshooter_logo.svg"
-                alt="GeoCarbonite"
-                className="h-32 w-auto mx-auto mb-6"
-                priority
-              />
+
             </div>
 
             {/* Navigation */}
