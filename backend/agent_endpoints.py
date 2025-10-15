@@ -1139,15 +1139,14 @@ async def debug_metrics_tables(db: Session = Depends(get_db)):
 @agent_router.post("/chat/close-all")
 async def close_all_sessions():
     """Endpoint SUPER SIMPLES para o frontend chamar quando fechar"""
+    from database import SessionLocal
+    from chat_service import ChatService
+    from metrics_collector import metrics_collector
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
+
+    db = SessionLocal()
     try:
-        from database import SessionLocal
-        from chat_service import ChatService  
-        from metrics_collector import metrics_collector
-        from sqlalchemy import text
-        from datetime import datetime, timedelta
-        
-        db = SessionLocal()
-        
         # Pegar todas as sessões ativas das últimas 2 horas
         cutoff = datetime.now() - timedelta(hours=2)
         
@@ -1183,19 +1182,19 @@ async def close_all_sessions():
                         
             except Exception as e:
                 logger.error(f"❌ Erro ao analisar sessão {session.session_id}: {e}")
-        
-        db.close()
-        
+
         return {
             "success": True,
             "message": f"Análise de {analyzed} sessões solicitada",
             "sessions_found": len(active_sessions),
             "sessions_analyzed": analyzed
         }
-        
+
     except Exception as e:
         logger.error(f"❌ Erro no fechamento geral: {e}")
         return {"success": False, "error": str(e)}
+    finally:
+        db.close()
 
 @agent_router.get("/metrics/realtime")
 async def get_realtime_metrics(db: Session = Depends(get_db)):

@@ -324,7 +324,7 @@ class MetricsCollector:
     async def _process_execution_batch(self, items: List[Dict[str, Any]]):
         """Processar lote de métricas de execução"""
         from database import SessionLocal
-        
+
         db = SessionLocal()
         try:
             for item in items:
@@ -402,7 +402,7 @@ class MetricsCollector:
     async def _process_content_analysis(self, data: Dict[str, Any]):
         """Processar análise de conteúdo para extrair tópicos"""
         from database import SessionLocal
-        
+
         db = SessionLocal()
         try:
             content = data.get('message_content', '')
@@ -443,7 +443,7 @@ class MetricsCollector:
     async def _process_session_metrics(self, data: Dict[str, Any]):
         """Processar métricas de sessão"""
         from database import SessionLocal
-        
+
         db = SessionLocal()
         try:
             session_id = data.get('session_id')
@@ -480,12 +480,12 @@ class MetricsCollector:
     
     async def _process_conversation_classification(self, data: Dict[str, Any]):
         """Processar classificação inteligente usando agente especialista"""
+        from agents import AgentManager
+        from qdrant_service import QdrantService
+        from database import SessionLocal
+
+        db = SessionLocal()
         try:
-            from agents import AgentManager
-            from qdrant_service import QdrantService
-            from database import SessionLocal
-            
-            db = SessionLocal()
             qdrant_service = QdrantService()
             agent_manager = AgentManager(db, qdrant_service)
             
@@ -604,16 +604,17 @@ class MetricsCollector:
                     
             else:
                 logger.warning(f"⚠️ Falha na classificação da conversa: {result.get('error', 'N/A')}")
-                
-            db.close()
-            
+
         except Exception as e:
             logger.error(f"❌ Erro na classificação de conversa: {e}")
+            db.rollback()
+        finally:
+            db.close()
     
     async def _cleanup_old_data(self):
         """Limpar dados antigos para otimizar performance"""
         from database import SessionLocal
-        
+
         db = SessionLocal()
         try:
             # Limpar sessões ativas antigas (mais de 24h)
@@ -637,11 +638,10 @@ class MetricsCollector:
         """Verificar sessões inativas para análise automática por timeout"""
         from database import SessionLocal
         from chat_service import ChatService
-        
+
         db = SessionLocal()
-        chat_service = ChatService(db)
-        
         try:
+            chat_service = ChatService(db)
             # Buscar sessões com última atividade há mais de 15 minutos
             cutoff_time = datetime.now() - timedelta(minutes=15)
             
@@ -800,7 +800,7 @@ class MetricsCollector:
     async def _save_execution_to_db(self, data: Dict[str, Any]):
         """Salvar métricas de execução diretamente no banco (fallback)"""
         from database import SessionLocal
-        
+
         db = SessionLocal()
         try:
             # Processar dados como no worker
@@ -866,7 +866,7 @@ class MetricsCollector:
     async def _save_content_to_db(self, data: Dict[str, Any]):
         """Salvar métricas de conteúdo diretamente no banco (fallback)"""
         from database import SessionLocal
-        
+
         db = SessionLocal()
         try:
             content = data.get('message_content', '')
@@ -905,7 +905,7 @@ class MetricsCollector:
     async def _save_session_to_db(self, data: Dict[str, Any]):
         """Salvar métricas de sessão diretamente no banco (fallback)"""
         from database import SessionLocal
-        
+
         db = SessionLocal()
         try:
             db.execute(text("""
@@ -1074,28 +1074,33 @@ def sync_request_conversation_analysis(session_id: str, messages: List[Dict]):
         try:
             from database import SessionLocal
             from sqlalchemy import text
-            
+
             db = SessionLocal()
-            db.execute(text("""
-                INSERT INTO user_feedback (
-                    session_id, user_id, agent_id, rating, 
-                    issue_category, feedback_comment, sentiment, auto_generated, created_at
-                ) VALUES (
-                    :session_id, :user_id, :agent_id, :rating,
-                    :category, :comment, :sentiment, :auto_generated, NOW()
-                )
-            """), {
-                'session_id': session_id,
-                'user_id': conversation_data.get('user_id', 'sync_analysis'),
-                'agent_id': conversation_data.get('agent_id'),
-                'rating': 3,  # Rating neutro para análises automáticas
-                'category': 'auto_analysis',
-                'comment': f'Análise automática - {len(messages)} mensagens processadas',
-                'sentiment': 'neutro',
-                'auto_generated': True
-            })
-            db.commit()
-            db.close()
-            logger.info(f"✅ Análise síncrona salva como fallback: {session_id}")
-        except Exception as fallback_error:
-            logger.error(f"❌ Erro no fallback síncrono: {fallback_error}")
+            try:
+                db.execute(text("""
+                    INSERT INTO user_feedback (
+                        session_id, user_id, agent_id, rating,
+                        issue_category, feedback_comment, sentiment, auto_generated, created_at
+                    ) VALUES (
+                        :session_id, :user_id, :agent_id, :rating,
+                        :category, :comment, :sentiment, :auto_generated, NOW()
+                    )
+                """), {
+                    'session_id': session_id,
+                    'user_id': conversation_data.get('user_id', 'sync_analysis'),
+                    'agent_id': conversation_data.get('agent_id'),
+                    'rating': 3,  # Rating neutro para análises automáticas
+                    'category': 'auto_analysis',
+                    'comment': f'Análise automática - {len(messages)} mensagens processadas',
+                    'sentiment': 'neutro',
+                    'auto_generated': True
+                })
+                db.commit()
+                logger.info(f"✅ Análise síncrona salva como fallback: {session_id}")
+            except Exception as fallback_error:
+                logger.error(f"❌ Erro no fallback síncrono: {fallback_error}")
+                db.rollback()
+            finally:
+                db.close()
+        except Exception as outer_error:
+            logger.error(f"❌ Erro ao criar sessão do banco no fallback: {outer_error}")
